@@ -1,30 +1,8 @@
-
 using SkiaSharp;
 using Omnijure.Core.DataStructures;
 using Silk.NET.Maths;
 
 namespace Omnijure.Visual.Rendering;
-
-
-
-public enum ChartType { Candles, Line, Area, Bars }
-
-public class UiButton 
-{
-    public SKRect Rect;
-    public string Text;
-    public Action Action;
-    public bool IsHovered;
-
-    public UiButton(float x, float y, float w, float h, string text, Action action)
-    {
-        Rect = new SKRect(x, y, x + w, y + h);
-        Text = text;
-        Action = action;
-    }
-
-    public bool Contains(float x, float y) => Rect.Contains(x, y);
-}
 
 public class ChartRenderer
 {
@@ -103,10 +81,6 @@ public class ChartRenderer
         {
             DrawCrosshairLabels(canvas, mousePos.X, mousePos.Y, chartW, chartH, minPrice, maxPrice, buffer, scrollOffset, visibleCandles, candleWidth, interval);
         }
-
-        // 6. Header
-        float curPrice = buffer.Count > 0 ? buffer[0].Close : 0;
-        DrawHeader(canvas, buffer.Count, symbol, interval, curPrice, maxPrice, decision, buttons);
     }
     
     // NEW: Separated Drawing Logic

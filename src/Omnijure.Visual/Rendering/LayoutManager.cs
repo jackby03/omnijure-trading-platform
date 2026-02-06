@@ -7,12 +7,14 @@ namespace Omnijure.Visual.Rendering;
 public class LayoutManager
 {
     // Layout Config
+    public float HeaderHeight { get; private set; } = 40;
     public float LeftSidebarWidth { get; private set; } = 250;
     public float RightSidebarWidth { get; private set; } = 300;
     private const float MinSidebarWidth = 100;
     private const float DividerWidth = 6;
     
     // Bounds
+    public SKRect HeaderRect { get; private set; }
     public SKRect LeftSidebarRect { get; private set; }
     public SKRect ChartRect { get; private set; }
     public SKRect RightSidebarRect { get; private set; }
@@ -33,11 +35,16 @@ public class LayoutManager
     
     public void UpdateLayout(int width, int height)
     {
+        // 0. Header
+        HeaderRect = new SKRect(0, 0, width, HeaderHeight);
+
         // Clamp Sidebar widths
         if (LeftSidebarWidth < MinSidebarWidth) LeftSidebarWidth = MinSidebarWidth;
         if (RightSidebarWidth < MinSidebarWidth) RightSidebarWidth = MinSidebarWidth;
         
+        float panelH = height - HeaderHeight;
         float remainingW = width - (DividerWidth * 2);
+        
         if (LeftSidebarWidth + RightSidebarWidth > remainingW - 200)
         {
              // Adjust if chart gets too small
@@ -48,19 +55,19 @@ public class LayoutManager
         }
 
         // 1. Left Sidebar
-        LeftSidebarRect = new SKRect(0, 0, LeftSidebarWidth, height);
+        LeftSidebarRect = new SKRect(0, HeaderHeight, LeftSidebarWidth, height);
         
         // 2. Left Divider
-        DividerLeftRect = new SKRect(LeftSidebarWidth, 0, LeftSidebarWidth + DividerWidth, height);
+        DividerLeftRect = new SKRect(LeftSidebarWidth, HeaderHeight, LeftSidebarWidth + DividerWidth, height);
         
-        // 3. Right Sidebar (from right side)
-        RightSidebarRect = new SKRect(width - RightSidebarWidth, 0, width, height);
+        // 3. Right Sidebar
+        RightSidebarRect = new SKRect(width - RightSidebarWidth, HeaderHeight, width, height);
         
         // 4. Right Divider
-        DividerRightRect = new SKRect(width - RightSidebarWidth - DividerWidth, 0, width - RightSidebarWidth, height);
+        DividerRightRect = new SKRect(width - RightSidebarWidth - DividerWidth, HeaderHeight, width - RightSidebarWidth, height);
         
         // 5. Center Chart
-        ChartRect = new SKRect(LeftSidebarWidth + DividerWidth, 0, width - RightSidebarWidth - DividerWidth, height);
+        ChartRect = new SKRect(LeftSidebarWidth + DividerWidth, HeaderHeight, width - RightSidebarWidth - DividerWidth, height);
     }
     
     public void HandleMouseDown(float x, float y)

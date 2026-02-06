@@ -19,6 +19,7 @@ public static class Program
     private static SKSurface _surface;
     private static ChartRenderer _renderer;
     private static LayoutManager _layout;
+    private static ToolbarRenderer _toolbar;
     private static Omnijure.Mind.ScriptEngine _mind;
     
     // Data
@@ -26,6 +27,12 @@ public static class Program
     private static OrderBook _orderBook;
     private static RingBuffer<Candle> _buffer;
     private static RingBuffer<MarketTrade> _trades;
+    
+    // UI Elements
+    private static List<UiButton> _uiButtons = new List<UiButton>();
+    private static List<UiDropdown> _uiDropdowns = new List<UiDropdown>();
+    private static UiDropdown _assetDropdown;
+    private static UiDropdown _intervalDropdown;
     
     // State
     private static string _currentSymbol = "BTCUSDT";
@@ -38,9 +45,6 @@ public static class Program
     private static bool _isDragging = false;
     private static Vector2D<float> _lastMousePos;
     private static Vector2D<float> _mousePos;
-
-    // UI State
-    private static System.Collections.Generic.List<Omnijure.Visual.Rendering.UiButton> _uiButtons = new();
 
     public static void Main(string[] args)
     {
@@ -98,6 +102,7 @@ public static class Program
         
         _renderer = new ChartRenderer();
         _layout = new LayoutManager();
+        _toolbar = new ToolbarRenderer();
         _buffer = new RingBuffer<Candle>(4096);
         _trades = new RingBuffer<MarketTrade>(1024);
         
@@ -123,34 +128,40 @@ public static class Program
     private static void SetupUi()
     {
         _uiButtons.Clear();
-        int x = 20;
-        
-        // Assets
-        var assets = new[] { "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT" };
-        foreach(var asset in assets)
-        {
-            // Use local variable for closure capture if needed, though C# 5+ handles foreach capture.
-            // But string is immutable so it's fine.
-            string a = asset; 
-            _uiButtons.Add(new UiButton(x, 10, 80, 30, a, () => SwitchContext(a, _currentTimeframe)));
-            x += 85;
-        }
+        _uiDropdowns.Clear();
 
-        x += 20;
-        // Timeframes
-        var tfs = new[] { "1m", "5m", "15m", "1h" };
-        foreach(var tf in tfs)
+        // 1. Asset Dropdown
+        var assets = new List<string> { "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT" };
+        _assetDropdown = new UiDropdown(10, 5, 180, 30, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
+        _uiDropdowns.Add(_assetDropdown);
+
+        // Fetch full list in background
+        Task.Run(async () => {
+            var fullList = await Omnijure.Core.Network.BinanceService.GetAllUsdtSymbolsAsync();
+            if (fullList != null && fullList.Count > 0)
+            {
+                _assetDropdown.Items = fullList;
+            }
+        });
+
+        // 2. Interval Dropdown
+        var intervals = new List<string> { "1s", "1m", "5m", "15m", "1h", "4h", "1d", "1w", "1M" };
+        _intervalDropdown = new UiDropdown(200, 5, 120, 30, "Interval", intervals, (tf) => SwitchContext(_currentSymbol, tf));
+        _uiDropdowns.Add(_intervalDropdown);
+
+        // 3. Chart Type Buttons
+        float x = 330;
+        var types = new[] { "Candle", "Line", "Area" };
+        foreach(var t in types)
         {
-            string t = tf;
-            _uiButtons.Add(new UiButton(x, 10, 40, 30, t, () => SwitchContext(_currentSymbol, t)));
-            x += 45;
+            string typeStr = t;
+            _uiButtons.Add(new UiButton(x, 5, 70, 30, t, () => {
+                if (typeStr == "Candle") _chartType = ChartType.Candles;
+                else if (typeStr == "Line") _chartType = ChartType.Line;
+                else if (typeStr == "Area") _chartType = ChartType.Area;
+            }));
+            x += 75;
         }
-        
-        x += 20;
-        // Chart Types
-        _uiButtons.Add(new UiButton(x, 10, 60, 30, "Candle", () => _chartType = ChartType.Candles)); x += 65;
-        _uiButtons.Add(new UiButton(x, 10, 60, 30, "Line", () => _chartType = ChartType.Line)); x += 65;
-        _uiButtons.Add(new UiButton(x, 10, 60, 30, "Area", () => _chartType = ChartType.Area)); x += 65;
     }
 
     private static void OnResize(Vector2D<int> size)
@@ -210,49 +221,63 @@ public static class Program
     { 
         if (arg2 == MouseButton.Left) 
         {
-            // 0. Layout Resize Check
-            _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
-            if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
+            // 0. Toolbar & Dropdown Hit Test
+            foreach(var dd in _uiDropdowns)
+            {
+                if (dd.IsOpen)
+                {
+                    for (int i = 0; i < dd.Items.Count; i++)
+                    {
+                        if (dd.ContainsItem(_mousePos.X, _mousePos.Y, i))
+                        {
+                            dd.SelectedItem = dd.Items[i];
+                            dd.OnSelected?.Invoke(dd.SelectedItem);
+                            dd.IsOpen = false;
+                            return;
+                        }
+                    }
+                    dd.IsOpen = false; // Close if clicked outside but was open
+                }
+                
+                if (dd.Contains(_mousePos.X, _mousePos.Y))
+                {
+                    dd.IsOpen = !dd.IsOpen;
+                    // Close others
+                    foreach(var other in _uiDropdowns) if (other != dd) other.IsOpen = false;
+                    return;
+                }
+            }
 
-            // UI Hit Test
-            bool uiClicked = false;
             foreach(var btn in _uiButtons)
             {
                 if (btn.Contains(_mousePos.X, _mousePos.Y))
                 {
                     btn.Action?.Invoke();
-                    uiClicked = true;
-                    break;
+                    return;
                 }
             }
-            
-            if (!uiClicked) 
+
+            // 1. Layout Resize Check
+            _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
+            if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
+
+            // 2. Chart Interaction
+            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _mousePos.X > _layout.ChartRect.Right - 70)
             {
-                 // Check Price Axis (Right Margin ~70px)
-                 // NOTE: Sidebar is on right now. Chart is Left.
-                 // Price Axis is on Right of CHART. 
-                 // We need to check coordinate relative to ChartRect!
-                 // Ideally LayoutManager handles this routing, but for now global logic:
-                 
-                 // If Layout Sidebar is 300px, Chart ends at Width-300.
-                 // Price Axis is inside ChartRect.
-                if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _mousePos.X > _layout.ChartRect.Right - 70)
-                {
-                    _isResizingPrice = true;
-                    _autoScaleY = false;
-                }
-                else if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
-                {
-                    _isDragging = true; 
-                }
-            } 
+                _isResizingPrice = true;
+                _autoScaleY = false;
+            }
+            else if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
+            {
+                _isDragging = true; 
+            }
         }
         else if (arg2 == MouseButton.Right)
         {
-            // Reset View
             _autoScaleY = true;
             _zoom = 1.0f;
             _scrollOffset = 0;
+            foreach(var dd in _uiDropdowns) dd.IsOpen = false;
         }
     }
     
@@ -273,6 +298,10 @@ public static class Program
         
         _mousePos = new Vector2D<float>(pos.X, pos.Y);
         
+        // 0. UI Hover
+        foreach(var dd in _uiDropdowns) dd.IsHovered = dd.Contains(_mousePos.X, _mousePos.Y);
+        foreach(var btn in _uiButtons) btn.IsHovered = btn.Contains(_mousePos.X, _mousePos.Y);
+
         if (_layout.IsResizingLeft || _layout.IsResizingRight)
         {
             _layout.HandleMouseMove(pos.X, pos.Y, deltaX);
@@ -280,6 +309,13 @@ public static class Program
             return;
         }
         
+        // If a dropdown is open, block chart dragging
+        if (_uiDropdowns.Any(d => d.IsOpen))
+        {
+             _lastMousePos = _mousePos;
+             return;
+        }
+
         if (_isResizingPrice)
         {
             float sensitivity = 0.005f;
@@ -422,6 +458,10 @@ public static class Program
         
         // Pass to Layout
         _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades);
+        
+        // Render Toolbar (Top)
+        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _uiDropdowns, _uiButtons);
+        
         _surface.Canvas.Flush();
     }
     
