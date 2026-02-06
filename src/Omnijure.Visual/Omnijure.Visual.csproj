@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <Platform Condition="'$(Platform)' == 'AnyCPU'">x64</Platform>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- <PublishAot>true</PublishAot> -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <Platforms>AnyCPU;x64</Platforms>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Omnijure.Core\Omnijure.Core.csproj" />
+    <ProjectReference Include="..\Omnijure.Mind\Omnijure.Mind.csproj" />
+    <ProjectReference Include="..\Omnijure.Oracle\Omnijure.Oracle.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Input" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.1" />
+    <PackageReference Include="SkiaSharp.Views.Desktop.Common" Version="3.119.1" />
+  </ItemGroup>
+
+</Project>

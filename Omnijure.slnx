@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Omnijure.Core/Omnijure.Core.csproj" />
+    <Project Path="src/Omnijure.Mind/Omnijure.Mind.csproj" />
+    <Project Path="src/Omnijure.Oracle/Omnijure.Oracle.csproj" />
+    <Project Path="src/Omnijure.Visual/Omnijure.Visual.csproj" />
+  </Folder>
+</Solution>
