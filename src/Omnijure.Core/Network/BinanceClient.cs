@@ -15,13 +15,15 @@ public class BinanceClient
     private readonly string _baseUrl = "wss://stream.binance.com:9443/ws/";
     private ClientWebSocket _socket;
     private readonly RingBuffer<Candle> _buffer;
+    private readonly RingBuffer<MarketTrade> _trades;
     private readonly OrderBook _orderBook;
     private CancellationTokenSource _cts;
 
-    public BinanceClient(RingBuffer<Candle> buffer, OrderBook orderBook)
+    public BinanceClient(RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades)
     {
         _buffer = buffer;
         _orderBook = orderBook;
+        _trades = trades;
     }
     public async Task ConnectAsync(string symbol = "BTCUSDT", string interval = "1m")
     {
@@ -48,12 +50,12 @@ public class BinanceClient
         
         try 
         {
-            // Use combined streams for Klines + Depth
-            // wss://stream.binance.com:9443/stream?streams=<streamName1>/<streamName2>
+            // Use combined streams for Klines + Depth + Trades
             string klineStream = $"{symbol.ToLower()}@kline_{interval}";
             string depthStream = $"{symbol.ToLower()}@depth20@100ms";
+            string tradeStream = $"{symbol.ToLower()}@trade";
             
-            string fullUrl = $"wss://stream.binance.com:9443/stream?streams={klineStream}/{depthStream}";
+            string fullUrl = $"wss://stream.binance.com:9443/stream?streams={klineStream}/{depthStream}/{tradeStream}";
             
             Console.WriteLine($"[Metal] Connecting to Combined Stream ({fullUrl})...");
             await _socket.ConnectAsync(new Uri(fullUrl), CancellationToken.None);
@@ -154,13 +156,19 @@ public class BinanceClient
                 {
                     ParseDepth(data);
                 }
+                else if (stream.Contains("@trade"))
+                {
+                    ParseTrade(data);
+                }
             }
             else
             {
                 // Single stream fallback
-                if (root.TryGetProperty("e", out var e) && e.GetString() == "kline")
+                if (root.TryGetProperty("e", out var e))
                 {
-                    ParseKline(root);
+                    string type = e.GetString() ?? "";
+                    if (type == "kline") ParseKline(root);
+                    else if (type == "trade") ParseTrade(root);
                 }
             }
         }
@@ -168,6 +176,23 @@ public class BinanceClient
         {
             // Ignore
         }
+    }
+
+    private void ParseTrade(JsonElement data)
+    {
+        // Format for @trade: {"e":"trade","E":...,"s":"BTCUSDT","t":...,"p":"...","q":"...","b":...,"a":...,"T":...,"m":true,"M":true}
+        // "p": price, "q": quantity, "T": trade time, "m": is buyer maker
+        float price = float.Parse(data.GetProperty("p").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+        float qty = float.Parse(data.GetProperty("q").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+        long time = data.GetProperty("T").GetInt64();
+        bool isBuyerMaker = data.GetProperty("m").GetBoolean();
+
+        _trades.Push(new MarketTrade {
+            Price = price,
+            Quantity = qty,
+            Timestamp = time,
+            IsBuyerMaker = isBuyerMaker
+        });
     }
 
     private void ParseKline(JsonElement kline)

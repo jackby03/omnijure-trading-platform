@@ -5,6 +5,7 @@ using Silk.NET.OpenGL; // Raw GL
 using SkiaSharp;
 using Omnijure.Visual.Rendering;
 using Omnijure.Core.DataStructures;
+using Omnijure.Core.Network;
 
 using Silk.NET.Input;
 
@@ -21,9 +22,10 @@ public static class Program
     private static Omnijure.Mind.ScriptEngine _mind;
     
     // Data
-    private static RingBuffer<Candle> _buffer;
-    private static Omnijure.Core.Network.BinanceClient _binance;
+    private static BinanceClient _binance;
     private static OrderBook _orderBook;
+    private static RingBuffer<Candle> _buffer;
+    private static RingBuffer<MarketTrade> _trades;
     
     // State
     private static string _currentSymbol = "BTCUSDT";
@@ -97,10 +99,11 @@ public static class Program
         _renderer = new ChartRenderer();
         _layout = new LayoutManager();
         _buffer = new RingBuffer<Candle>(4096);
+        _trades = new RingBuffer<MarketTrade>(1024);
         
         // 4. REAL DATA (The Metal)
         _orderBook = new OrderBook();
-        _binance = new Omnijure.Core.Network.BinanceClient(_buffer, _orderBook);
+        _binance = new Omnijure.Core.Network.BinanceClient(_buffer, _orderBook, _trades);
         _ = _binance.ConnectAsync(_currentSymbol, _currentTimeframe);
         
         // 3. Init Mind
@@ -209,7 +212,7 @@ public static class Program
         {
             // 0. Layout Resize Check
             _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
-            if (_layout.IsResizingSidebar) return;
+            if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
 
             // UI Hit Test
             bool uiClicked = false;
@@ -270,7 +273,7 @@ public static class Program
         
         _mousePos = new Vector2D<float>(pos.X, pos.Y);
         
-        if (_layout.IsResizingSidebar)
+        if (_layout.IsResizingLeft || _layout.IsResizingRight)
         {
             _layout.HandleMouseMove(pos.X, pos.Y, deltaX);
             _lastMousePos = _mousePos;
@@ -418,7 +421,7 @@ public static class Program
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
         
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook);
+        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades);
         _surface.Canvas.Flush();
     }
     

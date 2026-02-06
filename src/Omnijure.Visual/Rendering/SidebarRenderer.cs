@@ -33,11 +33,60 @@ public class SidebarRenderer
         _bidTextPaint = new SKPaint { Color = new SKColor(38, 166, 154), IsAntialias = true };
     }
 
-    public void Render(SKCanvas canvas, float width, float height, OrderBook orderBook)
+    public void RenderOrderBook(SKCanvas canvas, float width, float height, OrderBook orderBook)
+    {
+        canvas.DrawRect(0, 0, width, height, _bgPaint);
+        canvas.DrawText("ORDER BOOK", 10, 25, _headerFont, _headerTextPaint);
+        canvas.DrawLine(0, 35, width, 35, _linePaint);
+        
+        if (orderBook == null) return;
+
+        lock(orderBook)
+        {
+            float rowH = 18;
+            float startY = 50;
+            
+            var asks = orderBook.Asks.Take(20).ToList();
+            var bids = orderBook.Bids.Take(20).ToList();
+            
+            float maxQty = 0;
+            if (asks.Count > 0) maxQty = Math.Max(maxQty, asks.Max(a => a.Quantity));
+            if (bids.Count > 0) maxQty = Math.Max(maxQty, bids.Max(b => b.Quantity));
+            if (maxQty == 0) maxQty = 1;
+
+            float y = startY;
+            // Asks (Reverse so highest price is top of the list if we want, or lowest is bottom)
+            // TradingView style: Asks on top, Bids on bottom. Asks sorted Ascending (lowest price bottom of asks block).
+            foreach(var ask in asks.AsEnumerable().Reverse())
+            {
+                float barW = (ask.Quantity / maxQty) * width;
+                canvas.DrawRect(width - barW, y - rowH + 4, barW, rowH, _askPaint);
+                canvas.DrawText(ask.Price.ToString("F2"), 10, y, _itemFont, _askTextPaint);
+                canvas.DrawText(ask.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
+                y += rowH;
+            }
+
+            y += 5;
+            canvas.DrawLine(10, y, width - 10, y, _linePaint);
+            y += 15;
+
+            foreach(var bid in bids)
+            {
+                float barW = (bid.Quantity / maxQty) * width;
+                canvas.DrawRect(width - barW, y - rowH + 4, barW, rowH, _bidPaint);
+                canvas.DrawText(bid.Price.ToString("F2"), 10, y, _itemFont, _bidTextPaint);
+                canvas.DrawText(bid.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
+                y += rowH;
+            }
+        }
+    }
+
+    public void RenderRightSidebar(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
     {
         canvas.DrawRect(0, 0, width, height, _bgPaint);
         
-        // Header "Watchlist"
+        // 1. WATCHLIST (Top Half)
+        float watchlistH = height * 0.4f;
         canvas.DrawText("WATCHLIST", 10, 25, _headerFont, _headerTextPaint);
         canvas.DrawLine(0, 35, width, 35, _linePaint);
         
@@ -50,56 +99,35 @@ public class SidebarRenderer
             canvas.DrawText(s, 10, y, _itemFont, itemTextPaint);
             canvas.DrawText("---", width - 60, y, _itemFont, itemTextPaint);
             y += 25;
+            if (y > watchlistH - 20) break;
         }
-        
-        // Order Book
-        float midY = height / 2;
-        canvas.DrawLine(0, midY, width, midY, _linePaint);
-        canvas.DrawText("ORDER BOOK", 10, midY + 25, _headerFont, _headerTextPaint);
-        
-        if (orderBook == null) return;
 
-        lock(orderBook)
+        // 2. MARKET TRADES (Bottom Half)
+        float tradesStartY = watchlistH;
+        canvas.DrawLine(0, tradesStartY, width, tradesStartY, _linePaint);
+        canvas.DrawText("MARKET TRADES", 10, tradesStartY + 25, _headerFont, _headerTextPaint);
+        canvas.DrawLine(0, tradesStartY + 35, width, tradesStartY + 35, _linePaint);
+
+        if (trades == null || trades.Count == 0) return;
+
+        float rowH = 20;
+        y = tradesStartY + 55;
+        
+        // Show last ~20-30 trades
+        int count = Math.Min(trades.Count, (int)((height - y) / rowH));
+        
+        for (int i = 0; i < count; i++)
         {
-            float rowH = 18;
-            float startY = midY + 40;
+            var t = trades[i];
+            var paint = t.IsBuyerMaker ? _askTextPaint : _bidTextPaint; // BuyerMaker = Sell (Red)
             
-            // Limit to e.g. 15 levels
-            var asks = orderBook.Asks.Take(15).ToList();
-            var bids = orderBook.Bids.Take(15).ToList();
+            canvas.DrawText(t.Price.ToString("F2"), 10, y, _itemFont, paint);
+            canvas.DrawText(t.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
             
-            float maxQty = 0;
-            if (asks.Count > 0) maxQty = Math.Max(maxQty, asks.Max(a => a.Quantity));
-            if (bids.Count > 0) maxQty = Math.Max(maxQty, bids.Max(b => b.Quantity));
-            if (maxQty == 0) maxQty = 1;
-
-            // Draw Asks (Red) - Showing the lowest asks first (at the top or merged)
-            // Usually Order book shows Asks on top, Bids on bottom.
-            // Asks are sorted by price ascending.
-            y = startY;
-            foreach(var ask in asks.AsEnumerable().Reverse()) // Reverse so lowest is closer to middle if we want
-            {
-                float barW = (ask.Quantity / maxQty) * width;
-                canvas.DrawRect(width - barW, y - rowH + 4, barW, rowH, _askPaint);
-                canvas.DrawText(ask.Price.ToString("F2"), 10, y, _itemFont, _askTextPaint);
-                canvas.DrawText(ask.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
-                y += rowH;
-            }
-
-            // Middle Price
-            y += 5;
-            canvas.DrawLine(10, y, width - 10, y, _linePaint);
-            y += 15;
-
-            // Draw Bids (Green)
-            foreach(var bid in bids)
-            {
-                float barW = (bid.Quantity / maxQty) * width;
-                canvas.DrawRect(width - barW, y - rowH + 4, barW, rowH, _bidPaint);
-                canvas.DrawText(bid.Price.ToString("F2"), 10, y, _itemFont, _bidTextPaint);
-                canvas.DrawText(bid.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
-                y += rowH;
-            }
+            DateTime dt = DateTimeOffset.FromUnixTimeMilliseconds(t.Timestamp).LocalDateTime;
+            canvas.DrawText(dt.ToString("HH:mm:ss"), width - 60, y, _itemFont, itemTextPaint);
+            
+            y += rowH;
         }
     }
 }
