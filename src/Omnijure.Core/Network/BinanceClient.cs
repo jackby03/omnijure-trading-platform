@@ -18,6 +18,7 @@ public class BinanceClient
     private readonly RingBuffer<MarketTrade> _trades;
     private readonly OrderBook _orderBook;
     private CancellationTokenSource _cts;
+    private readonly SemaphoreSlim _connectionLock = new SemaphoreSlim(1, 1);
 
     public BinanceClient(RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades)
     {
@@ -27,51 +28,58 @@ public class BinanceClient
     }
     public async Task ConnectAsync(string symbol = "BTCUSDT", string interval = "1m")
     {
-        await DisconnectAsync();
-        
-        // Normalize
-        symbol = symbol.ToUpper();
-        _currentInterval = interval;
-        
-        // 1. Backfill History (REST)
+        await _connectionLock.WaitAsync();
         try 
         {
-            Console.WriteLine($"[Metal] Fetching History for {symbol} {interval}...");
-            await FetchHistoryAsync(symbol, interval);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Metal] History Fetch Failed: {ex.Message}");
-        }
+            await DisconnectAsyncInternal();
+            
+            // Normalize
+            symbol = symbol.ToUpper();
+            _currentInterval = interval;
+            
+            // 1. Backfill History (REST)
+            try 
+            {
+                Console.WriteLine($"[Metal] Fetching History for {symbol} {interval}...");
+                await FetchHistoryAsync(symbol, interval);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Metal] History Fetch Failed: {ex.Message}");
+            }
 
-        // 2. Connect Realtime Stream
-        _cts = new CancellationTokenSource();
-        _socket = new ClientWebSocket();
-        
-        try 
-        {
-            // Use combined streams for Klines + Depth + Trades
-            string klineStream = $"{symbol.ToLower()}@kline_{interval}";
-            string depthStream = $"{symbol.ToLower()}@depth20@100ms";
-            string tradeStream = $"{symbol.ToLower()}@trade";
+            // 2. Connect Realtime Stream
+            _cts = new CancellationTokenSource();
+            _socket = new ClientWebSocket();
             
-            string fullUrl = $"wss://stream.binance.com:9443/stream?streams={klineStream}/{depthStream}/{tradeStream}";
-            
-            Console.WriteLine($"[Metal] Connecting to Combined Stream ({fullUrl})...");
-            await _socket.ConnectAsync(new Uri(fullUrl), CancellationToken.None);
-            Console.WriteLine($"[Metal] Connected to Combined Streams for {symbol}!");
-            
-            _ = ReceiveLoop();
+            try 
+            {
+                // Use combined streams for Klines + Depth + Trades
+                string klineStream = $"{symbol.ToLower()}@kline_{interval}";
+                string depthStream = $"{symbol.ToLower()}@depth20@100ms";
+                string tradeStream = $"{symbol.ToLower()}@trade";
+                
+                string fullUrl = $"wss://stream.binance.com:9443/stream?streams={klineStream}/{depthStream}/{tradeStream}";
+                
+                Console.WriteLine($"[Metal] Connecting to Combined Stream ({fullUrl})...");
+                await _socket.ConnectAsync(new Uri(fullUrl), CancellationToken.None);
+                Console.WriteLine($"[Metal] Connected to Combined Streams for {symbol}!");
+                
+                _ = ReceiveLoop();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Metal] Connection Failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            Console.WriteLine($"[Metal] Connection Failed: {ex.Message}");
+            _connectionLock.Release();
         }
     }
 
     private async Task FetchHistoryAsync(string symbol, string interval)
     {
-        // https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=500
         using var client = new System.Net.Http.HttpClient();
         string url = $"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=500";
         string json = await client.GetStringAsync(url);
@@ -81,7 +89,6 @@ public class BinanceClient
         
         foreach (var kline in root.EnumerateArray())
         {
-            // ... (Parsing same)
             long timestamp = kline[0].GetInt64();
             float open = float.Parse(kline[1].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
             float high = float.Parse(kline[2].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
@@ -89,11 +96,7 @@ public class BinanceClient
             float close = float.Parse(kline[4].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
             float vol = float.Parse(kline[5].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
             
-            var candle = new Candle
-            {
-                Open = open, Close = close, High = high, Low = low, Volume = vol, Timestamp = timestamp
-            };
-            
+            var candle = new Candle { Open = open, Close = close, High = high, Low = low, Volume = vol, Timestamp = timestamp };
             _buffer.Push(candle);
         }
         Console.WriteLine($"[Metal] Backfilled {root.GetArrayLength()} candles for {symbol}.");
@@ -101,17 +104,38 @@ public class BinanceClient
 
     public async Task DisconnectAsync()
     {
+        await _connectionLock.WaitAsync();
+        try
+        {
+            await DisconnectAsyncInternal();
+        }
+        finally
+        {
+            _connectionLock.Release();
+        }
+    }
+
+    private async Task DisconnectAsyncInternal()
+    {
         if (_socket != null)
         {
             try 
             {
                 _cts?.Cancel();
-                if (_socket.State == WebSocketState.Open)
-                    await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Switching Interval", CancellationToken.None);
-                _socket.Dispose();
+                if (_socket.State == WebSocketState.Open || _socket.State == WebSocketState.CloseReceived)
+                {
+                    using var timeoutCts = new CancellationTokenSource(2000);
+                    await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Switching", timeoutCts.Token);
+                }
             }
             catch {}
-            finally { _socket = null; }
+            finally 
+            {
+                _socket.Dispose();
+                _socket = null; 
+                _cts?.Dispose();
+                _cts = null;
+            }
         }
     }
 

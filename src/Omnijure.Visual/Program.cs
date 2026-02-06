@@ -7,6 +7,8 @@ using Omnijure.Visual.Rendering;
 using Omnijure.Core.DataStructures;
 using Omnijure.Core.Network;
 
+using System.Linq;
+using System.Text.Json;
 using Silk.NET.Input;
 
 namespace Omnijure.Visual;
@@ -45,6 +47,12 @@ public static class Program
     private static bool _isDragging = false;
     private static Vector2D<float> _lastMousePos;
     private static Vector2D<float> _mousePos;
+    
+    // Viewport State
+    private static bool _isResizingPrice = false;
+    private static bool _autoScaleY = true;
+    private static float _viewMinY;
+    private static float _viewMaxY;
 
     public static void Main(string[] args)
     {
@@ -123,6 +131,28 @@ public static class Program
 
         // Setup UI
         SetupUi();
+
+        // Background stats fetch (24h Ticker)
+        _ = Task.Run(async () => {
+            using var httpClient = new System.Net.Http.HttpClient();
+            while (true)
+            {
+                try {
+                    string currentSymbol = _currentSymbol; 
+                    var response = await httpClient.GetStringAsync($"https://api.binance.com/api/v3/ticker/24hr?symbol={currentSymbol}");
+                    using var doc = JsonDocument.Parse(response);
+                    float price = float.Parse(doc.RootElement.GetProperty("lastPrice").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+                    float change = float.Parse(doc.RootElement.GetProperty("priceChangePercent").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+                    
+                    if (_assetDropdown != null)
+                    {
+                        _assetDropdown.CurrentPrice = price;
+                        _assetDropdown.PercentChange = change;
+                    }
+                } catch { }
+                await Task.Delay(5000);
+            }
+        });
     }
 
     private static void SetupUi()
@@ -172,9 +202,28 @@ public static class Program
         CreateSurface(size);
     }
 
-    // Input Handlers
+    private static void OnKeyChar(IKeyboard arg1, char arg2)
+    {
+        var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
+        if (openDd != null)
+        {
+            openDd.SearchQuery += arg2;
+        }
+    }
+
     private static void OnKeyDown(IKeyboard arg1, Key arg2, int arg3)
     {
+        var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
+        if (openDd != null)
+        {
+            if (arg2 == Key.Escape) openDd.IsOpen = false;
+            else if (arg2 == Key.Backspace && openDd.SearchQuery.Length > 0)
+            {
+                openDd.SearchQuery = openDd.SearchQuery[..^1];
+            }
+            return;
+        }
+
         if (arg2 == Key.Space) { _scrollOffset = 0; _zoom = 1.0f; }
         
         // Timeframe Switching
@@ -199,53 +248,65 @@ public static class Program
         _window.Title = $"Omnijure - {symbol} [{interval}]";
         
         _ = _binance.ConnectAsync(symbol, interval);
+        SetupUi();
     }
 
     private static void OnScroll(IMouse arg1, ScrollWheel arg2)
     {
-        // Logarithmic / Smoother Zoom
+        var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
+        if (openDd != null)
+        {
+            float delta = -arg2.Y; 
+            var filtered = openDd.GetFilteredItems();
+            openDd.ScrollOffset = Math.Max(0, Math.Min(filtered.Count - openDd.MaxVisibleItems, openDd.ScrollOffset + delta));
+            return;
+        }
+
         if (arg2.Y > 0) _zoom *= 1.1f;
         else _zoom *= 0.9f;
-        
-        // Clamp Zoom
-        _zoom = System.Math.Clamp(_zoom, 0.05f, 10.0f);
+        _zoom = Math.Clamp(_zoom, 0.05f, 50.0f);
     }
-
-    // Viewport State
-    private static bool _isResizingPrice = false;
-    private static bool _autoScaleY = true;
-    private static float _viewMinY;
-    private static float _viewMaxY;
 
     private static void OnMouseDown(IMouse arg1, MouseButton arg2) 
     { 
         if (arg2 == MouseButton.Left) 
         {
-            // 0. Toolbar & Dropdown Hit Test
+            UiDropdown clickedDd = null;
             foreach(var dd in _uiDropdowns)
             {
                 if (dd.IsOpen)
                 {
-                    for (int i = 0; i < dd.Items.Count; i++)
+                    var filtered = dd.GetFilteredItems();
+                    for (int i = 0; i < filtered.Count; i++)
                     {
                         if (dd.ContainsItem(_mousePos.X, _mousePos.Y, i))
                         {
-                            dd.SelectedItem = dd.Items[i];
+                            dd.SelectedItem = filtered[i];
                             dd.OnSelected?.Invoke(dd.SelectedItem);
                             dd.IsOpen = false;
+                            dd.SearchQuery = "";
+                            dd.ScrollOffset = 0;
                             return;
                         }
                     }
-                    dd.IsOpen = false; // Close if clicked outside but was open
                 }
                 
                 if (dd.Contains(_mousePos.X, _mousePos.Y))
-                {
-                    dd.IsOpen = !dd.IsOpen;
-                    // Close others
-                    foreach(var other in _uiDropdowns) if (other != dd) other.IsOpen = false;
-                    return;
-                }
+                    clickedDd = dd;
+            }
+
+            if (clickedDd != null)
+            {
+                clickedDd.IsOpen = !clickedDd.IsOpen;
+                if (clickedDd.IsOpen) { clickedDd.SearchQuery = ""; clickedDd.ScrollOffset = 0; }
+                foreach(var other in _uiDropdowns) if (other != clickedDd) other.IsOpen = false;
+                return;
+            }
+
+            // Close all if clicked away
+            foreach(var dd in _uiDropdowns) 
+            {
+                if (dd.IsOpen) { dd.IsOpen = false; dd.SearchQuery = ""; dd.ScrollOffset = 0; }
             }
 
             foreach(var btn in _uiButtons)
@@ -257,11 +318,9 @@ public static class Program
                 }
             }
 
-            // 1. Layout Resize Check
             _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
             if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
 
-            // 2. Chart Interaction
             if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _mousePos.X > _layout.ChartRect.Right - 70)
             {
                 _isResizingPrice = true;
@@ -277,7 +336,7 @@ public static class Program
             _autoScaleY = true;
             _zoom = 1.0f;
             _scrollOffset = 0;
-            foreach(var dd in _uiDropdowns) dd.IsOpen = false;
+            foreach(var dd in _uiDropdowns) { dd.IsOpen = false; dd.SearchQuery = ""; dd.ScrollOffset = 0; }
         }
     }
     

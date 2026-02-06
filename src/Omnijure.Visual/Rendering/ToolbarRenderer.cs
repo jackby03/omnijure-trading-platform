@@ -46,34 +46,72 @@ public class ToolbarRenderer
             {
                 // Main box
                 canvas.DrawRoundRect(dd.Rect, 4, 4, dd.IsHovered ? _btnHover : _btnFill);
-                string display = $"{dd.Label}: {dd.SelectedItem}";
-                float tw = _font.MeasureText(display, out var bounds);
-                canvas.DrawText(display, dd.Rect.Left + 10, dd.Rect.MidY + 5, _font, _textPaint);
+                
+                string stats = dd.Label == "Asset" && dd.CurrentPrice > 0 
+                               ? $" | ${dd.CurrentPrice:F2} ({dd.PercentChange:F2}%)" 
+                               : "";
+                
+                string display = $"{dd.Label}: {dd.SelectedItem}{stats}";
+                
+                using var statsPaint = new SKPaint { 
+                    Color = dd.PercentChange >= 0 ? SKColors.LimeGreen : SKColors.Red, 
+                    IsAntialias = true 
+                };
+                
+                canvas.DrawText($"{dd.Label}: {dd.SelectedItem}", dd.Rect.Left + 10, dd.Rect.MidY + 5, _font, _textPaint);
+                if (!string.IsNullOrEmpty(stats))
+                {
+                    float labelW = _font.MeasureText($"{dd.Label}: {dd.SelectedItem}");
+                    canvas.DrawText(stats, dd.Rect.Left + 10 + labelW, dd.Rect.MidY + 5, _font, statsPaint);
+                }
 
-                // Chevron (optional)
+                // Chevron
                 canvas.DrawText("v", dd.Rect.Right - 20, dd.Rect.MidY + 5, _font, _textPaint);
 
                 // Items if open
                 if (dd.IsOpen)
                 {
                     canvas.Save();
-                    // We need to render ABOVE everything else. 
-                    // Usually this is handled by a post-render pass or by drawing last.
-                    // For now, simple vertical list.
                     float itemH = dd.Rect.Height;
-                    float fullH = dd.Items.Count * itemH;
+                    var filtered = dd.GetFilteredItems();
+                    
+                    int displayCount = Math.Min(filtered.Count, dd.MaxVisibleItems);
+                    float fullH = (displayCount + 1) * itemH; // +1 for Search box
                     var listRect = new SKRect(dd.Rect.Left, dd.Rect.Bottom, dd.Rect.Right, dd.Rect.Bottom + fullH);
                     
+                    // Shadow/Border
+                    using var shadowPaint = new SKPaint { Color = new SKColor(0,0,0,100), MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 5) };
+                    canvas.DrawRect(listRect, shadowPaint);
                     canvas.DrawRect(listRect, _dropdownBg);
                     
-                    for (int i = 0; i < dd.Items.Count; i++)
+                    // Draw Search Bar
+                    using var searchPaint = new SKPaint { Color = new SKColor(50, 54, 62), Style = SKPaintStyle.Fill };
+                    var searchRect = new SKRect(dd.Rect.Left, dd.Rect.Bottom, dd.Rect.Right, dd.Rect.Bottom + itemH);
+                    canvas.DrawRect(searchRect, searchPaint);
+                    canvas.DrawText("> " + dd.SearchQuery + "_", searchRect.Left + 10, searchRect.MidY + 5, _font, _textPaint);
+
+                    int startIdx = (int)dd.ScrollOffset;
+                    for (int i = 0; i < displayCount; i++)
                     {
-                        var itemRect = new SKRect(dd.Rect.Left, dd.Rect.Bottom + (i * itemH), dd.Rect.Right, dd.Rect.Bottom + ((i + 1) * itemH));
-                        
-                        // Highlight if mouse is here (needs global hover check)
-                        // For now just draw text
-                        canvas.DrawText(dd.Items[i], itemRect.Left + 10, itemRect.MidY + 5, _font, _textPaint);
+                        int actualIdx = startIdx + i;
+                        if (actualIdx >= filtered.Count) break;
+
+                        var itemRect = new SKRect(dd.Rect.Left, dd.Rect.Bottom + ((i+1) * itemH), dd.Rect.Right, dd.Rect.Bottom + ((i + 2) * itemH));
+                        canvas.DrawText(filtered[actualIdx], itemRect.Left + 10, itemRect.MidY + 5, _font, _textPaint);
                     }
+                    
+                    // Scrollbar
+                    if (filtered.Count > dd.MaxVisibleItems)
+                    {
+                        float scrollTrackH = displayCount * itemH;
+                        float scrollThumbH = (dd.MaxVisibleItems / (float)filtered.Count) * scrollTrackH;
+                        float scrollThumbY = (dd.ScrollOffset / (float)filtered.Count) * scrollTrackH;
+                        
+                        var thumbRect = new SKRect(dd.Rect.Right - 6, dd.Rect.Bottom + itemH + scrollThumbY, dd.Rect.Right - 2, dd.Rect.Bottom + itemH + scrollThumbY + scrollThumbH);
+                        using var scrollPaint = new SKPaint { Color = new SKColor(100, 100, 100), Style = SKPaintStyle.Fill };
+                        canvas.DrawRoundRect(thumbRect, 2, 2, scrollPaint);
+                    }
+                    
                     canvas.Restore();
                 }
             }
