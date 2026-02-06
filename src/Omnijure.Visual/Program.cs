@@ -192,6 +192,11 @@ public static class Program
         _zoom = System.Math.Clamp(_zoom, 0.05f, 10.0f);
     }
 
+    // Viewport State
+    private static bool _autoScaleY = true;
+    private static float _viewMinY;
+    private static float _viewMaxY;
+
     private static void OnMouseDown(IMouse arg1, MouseButton arg2) 
     { 
         if (arg2 == MouseButton.Left) 
@@ -211,6 +216,13 @@ public static class Program
             
             if (!uiClicked) _isDragging = true; 
         }
+        else if (arg2 == MouseButton.Right)
+        {
+            // Reset View
+            _autoScaleY = true;
+            _zoom = 1.0f;
+            _scrollOffset = 0;
+        }
     }
     
     private static void OnMouseUp(IMouse arg1, MouseButton arg2) { if (arg2 == MouseButton.Left) _isDragging = false; }
@@ -222,10 +234,29 @@ public static class Program
         if (_isDragging)
         {
             float deltaX = pos.X - _lastMousePos.X;
-            // Improved Pan Sensitivity: Match candle width ideally
-            // Simple heuristic to make it feel better:
+            float deltaY = pos.Y - _lastMousePos.Y;
+            
+            // Horizontal Pan
             _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom)); 
             if (_scrollOffset < 0) _scrollOffset = 0;
+            
+            // Vertical Pan
+            if (System.Math.Abs(deltaY) > 0.5f)
+            {
+                _autoScaleY = false;
+                // Map pixel delta to price
+                // We need current range to know scale
+                float range = _viewMaxY - _viewMinY;
+                float pxHeight = _window.Size.Y;
+                if (pxHeight > 0)
+                {
+                    float pricePerPx = range / pxHeight;
+                    float priceDelta = deltaY * pricePerPx;
+                    
+                    _viewMinY += priceDelta;
+                    _viewMaxY += priceDelta;
+                }
+            }
         }
         _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
         
@@ -263,8 +294,47 @@ public static class Program
         _mind?.InvokeTick(signals);
         string decision = _mind?.LastDecision ?? "OFFLINE";
 
+
+        // Pre-Calculate Layout Logic (Moved from Renderer so we can control it)
+        int baseView = 150;
+        int visibleCandles = (int)(baseView / _zoom);
+        if (visibleCandles < 10) visibleCandles = 10; 
+        if (visibleCandles > 2000) visibleCandles = 2000;
+        
+        if (_scrollOffset > _buffer.Count - visibleCandles) _scrollOffset = _buffer.Count - visibleCandles;
+        if (_scrollOffset < 0) _scrollOffset = 0;
+
+        // Calculate Auto-Min/Max
+        float calcMax = float.MinValue;
+        float calcMin = float.MaxValue;
+        
+        if (_buffer.Count > 0)
+        {
+            for (int i = 0; i < visibleCandles; i++)
+            {
+                int idx = i + _scrollOffset;
+                if (idx >= _buffer.Count) break;
+                
+                ref var c = ref _buffer[idx];
+                if (c.High > calcMax) calcMax = c.High;
+                if (c.Low < calcMin) calcMin = c.Low;
+            }
+        } else {
+            calcMax = 100; calcMin = 0;
+        }
+        
+        if (calcMax <= calcMin) { calcMax = calcMin + 1; }
+
+        // Apply Viewport Logic
+        if (_autoScaleY)
+        {
+            // Smooth transition could go here, but strict snap for now
+            _viewMinY = calcMin;
+            _viewMaxY = calcMax;
+        }
+
         // Pass Interaction State
-        _renderer.Render(_surface.Canvas, _window.Size.X, _window.Size.Y, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons);
+        _renderer.Render(_surface.Canvas, _window.Size.X, _window.Size.Y, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY);
         _surface.Canvas.Flush();
     }
     

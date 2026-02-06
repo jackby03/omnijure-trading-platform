@@ -46,7 +46,7 @@ public class ChartRenderer
 
     // Render method...
 
-    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons)
+    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice)
     {
         // PRODUCTION: Institutional Dark Background (Deep Blue/Black)
         canvas.Clear(new SKColor(10, 12, 16)); // #0A0C10
@@ -61,34 +61,17 @@ public class ChartRenderer
         // 1. Calculate Visible Range (Logarithmic Zoom Handling)
         int baseView = 150;
         int visibleCandles = (int)(baseView / zoom);
-        // Clamp to sane values to prevent "Too Small" or crashing
+        // Clamp to sane values
         if (visibleCandles < 10) visibleCandles = 10; 
         if (visibleCandles > 2000) visibleCandles = 2000;
         
-        // ... (Rest of logic: Offset calculation)
-        if (scrollOffset > buffer.Count - visibleCandles) scrollOffset = buffer.Count - visibleCandles;
-        if (scrollOffset < 0) scrollOffset = 0;
-
-        float maxPrice = float.MinValue;
-        float minPrice = float.MaxValue;
-        
-        int endIndex = Math.Min(buffer.Count, scrollOffset + visibleCandles);
-        // Better loop
-        for (int i = 0; i < visibleCandles; i++)
-        {
-            int idx = i + scrollOffset;
-            if (idx >= buffer.Count) break;
-            
-            ref var c = ref buffer[idx];
-            if (c.High > maxPrice) maxPrice = c.High;
-            if (c.Low < minPrice) minPrice = c.Low;
-        }
-        
-        float priceRange = maxPrice - minPrice;
-        if (priceRange == 0) priceRange = 1;
-
         // 3. Draw Dynamic Grid & Axes
-        float candleWidth = (float)width / visibleCandles;
+        float candleWidth = (float)width / visibleCandles; // Calc needed for grid
+        
+        DrawPriceAxis(canvas, width, height, minPrice, maxPrice);
+        DrawTimeAxis(canvas, width, height, buffer, scrollOffset, visibleCandles, candleWidth, interval);
+
+        // 4. Draw Chart Content based on Type
         
         DrawPriceAxis(canvas, width, height, minPrice, maxPrice);
         DrawTimeAxis(canvas, width, height, buffer, scrollOffset, visibleCandles, candleWidth, interval);
