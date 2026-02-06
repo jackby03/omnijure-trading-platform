@@ -54,7 +54,7 @@ public class ChartRenderer
         canvas.Save();
         canvas.ClipRect(new SKRect(0, 0, chartW, chartH));
         
-        DrawGrid(canvas, chartW, chartH, minPrice, maxPrice, visibleCandles, candleWidth);
+        DrawGrid(canvas, chartW, chartH, minPrice, maxPrice, visibleCandles, candleWidth, interval);
         
         switch(chartType)
         {
@@ -244,21 +244,30 @@ public class ChartRenderer
         }
     }
 
-    private void DrawGrid(SKCanvas canvas, int chartW, int chartH, float minPrice, float maxPrice, int visibleCandles, float candleWidth)
+    private void DrawGrid(SKCanvas canvas, int chartW, int chartH, float minPrice, float maxPrice, int visibleCandles, float candleWidth, string interval)
     {
         using var paint = new SKPaint { Color = new SKColor(30, 34, 40), IsAntialias = true, StrokeWidth = 1 };
 
-        // Vertical Lines
-        int skip = (int)(100 / candleWidth); 
-        if (skip < 1) skip = 1;
+        // Calculate grid interval based on timeframe
+        int gridInterval = interval switch
+        {
+            "1m" => 15,   // Every 15 minutes (15 candles)
+            "5m" => 12,   // Every hour (12 candles)
+            "15m" => 4,   // Every hour (4 candles)
+            "1h" => 6,    // Every 6 hours (6 candles)
+            "4h" => 6,    // Every day (6 candles)
+            "1d" => 7,    // Every week (7 candles)
+            _ => Math.Max(1, (int)(100 / candleWidth))
+        };
         
-        for (int i = 0; i < visibleCandles; i += skip)
+        // Vertical Lines (Time grid)
+        for (int i = 0; i < visibleCandles; i += gridInterval)
         {
              float x = (visibleCandles - 1 - i) * candleWidth + (candleWidth / 2);
              canvas.DrawLine(x, 0, x, chartH, paint);
         }
         
-        // Horizontal Lines
+        // Horizontal Lines (Price grid)
         float range = maxPrice - minPrice;
         if (range <= 0) return;
         double roughStep = range / 10.0;

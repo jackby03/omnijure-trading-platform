@@ -163,6 +163,12 @@ public class SearchModalRenderer
         canvas.DrawText(resultsText, modalX + 24, y, _fontSmall, _textPaintSmall);
         y += 18;
         
+        // Clip results area to prevent overflow
+        float resultsAreaHeight = modalHeight - (y - modalY) - 40; // Leave space for hint at bottom
+        var clipRect = new SKRect(modalX, y, modalX + modalWidth, y + resultsAreaHeight);
+        canvas.Save();
+        canvas.ClipRect(clipRect);
+        
         // Results list
         var results = modal.GetVisibleResults();
         float itemHeight = 48;
@@ -214,6 +220,9 @@ public class SearchModalRenderer
                 y += itemHeight + 2;
             }
         }
+        
+        // Restore canvas after clipping
+        canvas.Restore();
         
         // Scrollbar
         if (totalResults > modal.MaxVisibleResults)

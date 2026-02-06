@@ -353,6 +353,13 @@ public static class Program
         Console.WriteLine($"[Interface] Switching to {symbol} {interval}...");
         _buffer.Clear(); 
         
+        // Reset viewport and zoom state
+        _zoom = 1.0f;
+        _scrollOffset = 0;
+        _autoScaleY = true;
+        _viewMinY = 0;
+        _viewMaxY = 0;
+        
         // Update Title
         _window.Title = $"Omnijure - {symbol} [{interval}]";
         
@@ -398,6 +405,51 @@ public static class Program
     { 
         if (arg2 == MouseButton.Left) 
         {
+            // Check if modal is visible and handle clicks
+            if (_searchModal != null && _searchModal.IsVisible)
+            {
+                // Calculate modal bounds
+                float modalWidth = Math.Min(600, _window.Size.X - 80);
+                float modalHeight = Math.Min(700, _window.Size.Y - 100);
+                float modalX = (_window.Size.X - modalWidth) / 2;
+                float modalY = (_window.Size.Y - modalHeight) / 2 - 50;
+                
+                // Check if click is inside modal
+                if (_mousePos.X >= modalX && _mousePos.X <= modalX + modalWidth &&
+                    _mousePos.Y >= modalY && _mousePos.Y <= modalY + modalHeight)
+                {
+                    // Calculate item click area (starts after header and search box)
+                    float itemStartY = modalY + 18 + 48 + 18 + 44 + 58 + 14 + 18; // All header elements
+                    float itemHeight = 48;
+                    
+                    if (_mousePos.Y >= itemStartY)
+                    {
+                        int clickedIndex = (int)((_mousePos.Y - itemStartY) / (itemHeight + 2));
+                        int globalIndex = _searchModal.ScrollOffset + clickedIndex;
+                        
+                        if (globalIndex >= 0 && globalIndex < _searchModal.GetTotalResultCount())
+                        {
+                            _searchModal.SelectedIndex = globalIndex;
+                            var selected = _searchModal.GetSelectedSymbol();
+                            if (!string.IsNullOrEmpty(selected))
+                            {
+                                SwitchContext(selected, _currentTimeframe);
+                                _searchModal.IsVisible = false;
+                                _searchModal.Clear();
+                            }
+                        }
+                    }
+                    return; // Consume click inside modal
+                }
+                else
+                {
+                    // Click outside modal - close it
+                    _searchModal.IsVisible = false;
+                    _searchModal.Clear();
+                    return;
+                }
+            }
+            
             // Check search box first - open modal instead of focusing
             if (_searchBox != null && _searchBox.Contains(_mousePos.X, _mousePos.Y))
             {
