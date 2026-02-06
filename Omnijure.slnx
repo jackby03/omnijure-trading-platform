@@ -1,8 +1,20 @@
 <Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+  </Configurations>
   <Folder Name="/src/">
-    <Project Path="src/Omnijure.Core/Omnijure.Core.csproj" />
-    <Project Path="src/Omnijure.Mind/Omnijure.Mind.csproj" />
-    <Project Path="src/Omnijure.Oracle/Omnijure.Oracle.csproj" />
-    <Project Path="src/Omnijure.Visual/Omnijure.Visual.csproj" />
+    <Project Path="src/Omnijure.Core/Omnijure.Core.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="src/Omnijure.Mind/Omnijure.Mind.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="src/Omnijure.Oracle/Omnijure.Oracle.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="src/Omnijure.Visual/Omnijure.Visual.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
   </Folder>
 </Solution>

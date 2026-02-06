@@ -193,6 +193,7 @@ public static class Program
     }
 
     // Viewport State
+    private static bool _isResizingPrice = false;
     private static bool _autoScaleY = true;
     private static float _viewMinY;
     private static float _viewMaxY;
@@ -214,7 +215,19 @@ public static class Program
                 }
             }
             
-            if (!uiClicked) _isDragging = true; 
+            if (!uiClicked) 
+            {
+                 // Check Price Axis (Right Margin ~70px)
+                if (_mousePos.X > _window.Size.X - 70)
+                {
+                    _isResizingPrice = true;
+                    _autoScaleY = false;
+                }
+                else
+                {
+                    _isDragging = true; 
+                }
+            } 
         }
         else if (arg2 == MouseButton.Right)
         {
@@ -225,13 +238,35 @@ public static class Program
         }
     }
     
-    private static void OnMouseUp(IMouse arg1, MouseButton arg2) { if (arg2 == MouseButton.Left) _isDragging = false; }
+    private static void OnMouseUp(IMouse arg1, MouseButton arg2) 
+    { 
+        if (arg2 == MouseButton.Left) 
+        {
+            _isDragging = false; 
+            _isResizingPrice = false;
+        }
+    }
 
     private static void OnMouseMove(IMouse arg1, System.Numerics.Vector2 pos)
     {
         _mousePos = new Vector2D<float>(pos.X, pos.Y);
         
-        if (_isDragging)
+        if (_isResizingPrice)
+        {
+            float deltaY = pos.Y - _lastMousePos.Y;
+            float sensitivity = 0.005f;
+            float factor = 1.0f + (deltaY * sensitivity);
+            
+            float mid = (_viewMinY + _viewMaxY) / 2.0f;
+            float range = (_viewMaxY - _viewMinY);
+            float newRange = range * factor;
+            
+            if (newRange < 0.00001f) newRange = 0.00001f;
+            
+            _viewMinY = mid - newRange / 2.0f;
+            _viewMaxY = mid + newRange / 2.0f;
+        }
+        else if (_isDragging)
         {
             float deltaX = pos.X - _lastMousePos.X;
             float deltaY = pos.Y - _lastMousePos.Y;
