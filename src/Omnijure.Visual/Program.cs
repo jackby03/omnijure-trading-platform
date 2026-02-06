@@ -356,6 +356,12 @@ public static class Program
         // Update Title
         _window.Title = $"Omnijure - {symbol} [{interval}]";
         
+        // Update search box placeholder to show current asset
+        if (_searchBox != null)
+        {
+            _searchBox.Placeholder = symbol;
+        }
+        
         _ = _binance.ConnectAsync(symbol, interval);
         SetupUi();
     }
@@ -380,15 +386,15 @@ public static class Program
     { 
         if (arg2 == MouseButton.Left) 
         {
-            // Check search box first
+            // Check search box first - open modal instead of focusing
             if (_searchBox != null && _searchBox.Contains(_mousePos.X, _mousePos.Y))
             {
-                _searchBox.IsFocused = true;
+                if (_searchModal != null)
+                {
+                    _searchModal.IsVisible = true;
+                    _searchModal.Clear();
+                }
                 return;
-            }
-            else if (_searchBox != null)
-            {
-                _searchBox.IsFocused = false;
             }
             
             UiDropdown clickedDd = null;

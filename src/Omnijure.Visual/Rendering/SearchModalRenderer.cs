@@ -117,7 +117,7 @@ public class SearchModalRenderer
         
         // Search text or placeholder
         string displayText = string.IsNullOrEmpty(modal.SearchText) ? "Type to search..." : modal.SearchText;
-        using var searchTextPaint = string.IsNullOrEmpty(modal.SearchText) ? _textPaintSmall : _textPaintLarge;
+        var searchTextPaint = string.IsNullOrEmpty(modal.SearchText) ? _textPaintSmall : _textPaintLarge;
         canvas.DrawText(displayText, searchRect.Left + 50, searchRect.MidY + 8, _fontLarge, searchTextPaint);
         
         // Cursor
