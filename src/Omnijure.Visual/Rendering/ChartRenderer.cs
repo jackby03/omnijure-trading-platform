@@ -87,11 +87,13 @@ public class ChartRenderer
         float priceRange = maxPrice - minPrice;
         if (priceRange == 0) priceRange = 1;
 
-        // 3. Draw Grid
-        DrawGrid(canvas, width, height, minPrice, maxPrice);
+        // 3. Draw Dynamic Grid & Axes
+        float candleWidth = (float)width / visibleCandles;
+        
+        DrawPriceAxis(canvas, width, height, minPrice, maxPrice);
+        DrawTimeAxis(canvas, width, height, buffer, scrollOffset, visibleCandles, candleWidth, interval);
 
         // 4. Draw Chart Content based on Type
-        float candleWidth = (float)width / visibleCandles;
         
         if (chartType == ChartType.Candles) DrawCandles(canvas, buffer, visibleCandles, scrollOffset, width, height, minPrice, maxPrice, candleWidth);
         else if (chartType == ChartType.Line) DrawLineChart(canvas, buffer, visibleCandles, scrollOffset, width, height, minPrice, maxPrice, candleWidth);
@@ -172,6 +174,72 @@ public class ChartRenderer
          DrawLineChart(canvas, buffer, visible, offset, width, height, min, max, candleWidth);
     }
 
+    private void DrawPriceAxis(SKCanvas canvas, int width, int height, float min, float max)
+    {
+        using var gridPaint = new SKPaint { Color = SKColors.Gray.WithAlpha(40), StrokeWidth = 1 };
+        using var textPaint = new SKPaint { Color = SKColors.Gray, TextSize = 11, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Consolas") };
+
+        float range = max - min;
+        if (range <= 0) return;
+
+        // "Nice Number" Algorithm for Grid Steps
+        // Target ~10 grid lines
+        float rawStep = range / 8.0f;
+        float mag = (float)Math.Pow(10, Math.Floor(Math.Log10(rawStep)));
+        float residual = rawStep / mag;
+        
+        float step;
+        if (residual > 5) step = 10 * mag;
+        else if (residual > 2) step = 5 * mag;
+        else if (residual > 1) step = 2 * mag;
+        else step = mag;
+
+        float startPrice = (float)Math.Ceiling(min / step) * step;
+
+        for (float p = startPrice; p <= max; p += step)
+        {
+            float y = MapPriceToY(p, min, max, height);
+            
+            // Grid Line
+            canvas.DrawLine(0, y, width, y, gridPaint);
+            
+            // Label (Right aligned)
+            string label = p < 10 ? p.ToString("F4") : p.ToString("F2");
+            canvas.DrawText(label, width - 60, y - 4, textPaint);
+        }
+    }
+
+    private void DrawTimeAxis(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, int offset, int visible, float candleWidth, string interval)
+    {
+         using var gridPaint = new SKPaint { Color = SKColors.Gray.WithAlpha(40), StrokeWidth = 1 };
+         using var textPaint = new SKPaint { Color = SKColors.Gray, TextSize = 11, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Segoe UI") };
+
+         // Determine step (every N candles) to avoid overlap
+         // Assume label width ~50px
+         int pxStep = 100; 
+         int candleStep = (int)(pxStep / candleWidth);
+         if (candleStep < 1) candleStep = 1;
+
+         for (int i = 0; i < visible; i += candleStep)
+         {
+             int idx = i + offset;
+             if (idx >= buffer.Count) break;
+
+             float x = width - ((i + 1) * candleWidth) + (candleWidth/2);
+             
+             // Grid Line (Vertical)
+             canvas.DrawLine(x, 0, x, height, gridPaint);
+
+             // Label
+             long ts = buffer[idx].Timestamp;
+             // Binance Timestamp is ms
+             DateTime time = DateTimeOffset.FromUnixTimeMilliseconds(ts).LocalDateTime;
+             
+             string label = interval.Contains("m") ? time.ToString("HH:mm") : time.ToString("dd MMM");
+             canvas.DrawText(label, x - 20, height - 10, textPaint);
+         }
+    }
+
     private void DrawHeader(SKCanvas canvas, int count, string symbol, string interval, float price, float highDay, string decision, System.Collections.Generic.List<UiButton> buttons)
     {
         // HEADER BAR Background
@@ -197,17 +265,13 @@ public class ChartRenderer
             }
         }
         
-        // ... (Price/Decision/Info can be moved to Right side)
         // PRICE
         SKColor priceColor = SKColors.White;
         using var pricePaint = new SKPaint { Color = priceColor, TextSize = 16, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Consolas", SKFontStyle.Bold) };
         canvas.DrawText(price.ToString("F2") + " " + symbol, canvas.DeviceClipBounds.Width - 300, 30, pricePaint);
     }
     
-    // ... (MapPriceToY remains)
-
-
-    
+    // NEW: "The Brain" Layer
     private float MapPriceToY(float price, float min, float max, float height)
     {
         // Invert Y because 0 is top
@@ -216,23 +280,6 @@ public class ChartRenderer
         float normalized = (price - min) / range;
         return height - (normalized * height); 
     }
-
-
-
-    private void DrawGrid(SKCanvas canvas, int width, int height, float min, float max)
-    {
-        using var gridPaint = new SKPaint { Color = SKColors.Gray.WithAlpha(50), StrokeWidth = 1 };
-        
-        // Draw Horizontal Price Lines
-        int lines = 10;
-        for (int i = 0; i < lines; i++)
-        {
-            float y = (height / (float)lines) * i;
-            canvas.DrawLine(0, y, width, y, gridPaint);
-        }
-    }
-
-    // NEW: "The Brain" Layer
     private void DrawOrderBlocks(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, float min, float max, float width, float height)
     {
         // Conceptual: Identifying pivots. For visual demo, we simulate OBs based on local extrema.
