@@ -17,6 +17,7 @@ public static class Program
     private static GRContext _grContext;
     private static SKSurface _surface;
     private static ChartRenderer _renderer;
+    private static LayoutManager _layout;
     private static Omnijure.Mind.ScriptEngine _mind;
     
     // Data
@@ -91,7 +92,9 @@ public static class Program
         _grContext = GRContext.CreateGl(glInterface);
         
         
+        
         _renderer = new ChartRenderer();
+        _layout = new LayoutManager();
         _buffer = new RingBuffer<Candle>(4096);
         
         // 4. REAL DATA (The Metal)
@@ -202,6 +205,10 @@ public static class Program
     { 
         if (arg2 == MouseButton.Left) 
         {
+            // 0. Layout Resize Check
+            _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
+            if (_layout.IsResizingSidebar) return;
+
             // UI Hit Test
             bool uiClicked = false;
             foreach(var btn in _uiButtons)
@@ -210,7 +217,6 @@ public static class Program
                 {
                     btn.Action?.Invoke();
                     uiClicked = true;
-                    // For chart types, we just update state. For Context switch, we might rebuild buttons but they are static mostly.
                     break;
                 }
             }
@@ -218,12 +224,19 @@ public static class Program
             if (!uiClicked) 
             {
                  // Check Price Axis (Right Margin ~70px)
-                if (_mousePos.X > _window.Size.X - 70)
+                 // NOTE: Sidebar is on right now. Chart is Left.
+                 // Price Axis is on Right of CHART. 
+                 // We need to check coordinate relative to ChartRect!
+                 // Ideally LayoutManager handles this routing, but for now global logic:
+                 
+                 // If Layout Sidebar is 300px, Chart ends at Width-300.
+                 // Price Axis is inside ChartRect.
+                if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _mousePos.X > _layout.ChartRect.Right - 70)
                 {
                     _isResizingPrice = true;
                     _autoScaleY = false;
                 }
-                else
+                else if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
                 {
                     _isDragging = true; 
                 }
@@ -244,16 +257,26 @@ public static class Program
         {
             _isDragging = false; 
             _isResizingPrice = false;
+            _layout.HandleMouseUp();
         }
     }
 
     private static void OnMouseMove(IMouse arg1, System.Numerics.Vector2 pos)
     {
+        float deltaX = pos.X - _lastMousePos.X; 
+        float deltaY = pos.Y - _lastMousePos.Y;
+        
         _mousePos = new Vector2D<float>(pos.X, pos.Y);
+        
+        if (_layout.IsResizingSidebar)
+        {
+            _layout.HandleMouseMove(pos.X, pos.Y, deltaX);
+            _lastMousePos = _mousePos;
+            return;
+        }
         
         if (_isResizingPrice)
         {
-            float deltaY = pos.Y - _lastMousePos.Y;
             float sensitivity = 0.005f;
             float factor = 1.0f + (deltaY * sensitivity);
             
@@ -268,9 +291,6 @@ public static class Program
         }
         else if (_isDragging)
         {
-            float deltaX = pos.X - _lastMousePos.X;
-            float deltaY = pos.Y - _lastMousePos.Y;
-            
             // Horizontal Pan
             _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom)); 
             if (_scrollOffset < 0) _scrollOffset = 0;
@@ -368,8 +388,11 @@ public static class Program
             _viewMaxY = calcMax;
         }
 
-        // Pass Interaction State
-        _renderer.Render(_surface.Canvas, _window.Size.X, _window.Size.Y, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY);
+        // UPDATE LAYOUT
+        _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
+        
+        // Pass to Layout
+        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY);
         _surface.Canvas.Flush();
     }
     
