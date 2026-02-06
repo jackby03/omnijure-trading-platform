@@ -368,6 +368,18 @@ public static class Program
 
     private static void OnScroll(IMouse arg1, ScrollWheel arg2)
     {
+        // Search modal has highest priority
+        if (_searchModal != null && _searchModal.IsVisible)
+        {
+            float delta = -arg2.Y * 2; // Scroll sensitivity
+            int totalResults = _searchModal.GetTotalResultCount();
+            if (totalResults > _searchModal.MaxVisibleResults)
+            {
+                _searchModal.ScrollOffset = Math.Max(0, Math.Min(totalResults - _searchModal.MaxVisibleResults, _searchModal.ScrollOffset + (int)delta));
+            }
+            return;
+        }
+        
         var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
         if (openDd != null)
         {
