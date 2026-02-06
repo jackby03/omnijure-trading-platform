@@ -22,6 +22,7 @@ public static class Program
     private static ChartRenderer _renderer;
     private static LayoutManager _layout;
     private static ToolbarRenderer _toolbar;
+    private static SearchModalRenderer _searchModalRenderer;
     private static Omnijure.Mind.ScriptEngine _mind;
     
     // Data
@@ -36,6 +37,7 @@ public static class Program
     private static UiDropdown _assetDropdown;
     private static UiDropdown _intervalDropdown;
     private static UiSearchBox _searchBox;
+    private static UiSearchModal _searchModal;
     
     // State
     private static string _currentSymbol = "BTCUSDT";
@@ -112,6 +114,7 @@ public static class Program
         _renderer = new ChartRenderer();
         _layout = new LayoutManager();
         _toolbar = new ToolbarRenderer();
+        _searchModalRenderer = new SearchModalRenderer();
         _buffer = new RingBuffer<Candle>(4096);
         _trades = new RingBuffer<MarketTrade>(1024);
         
@@ -163,6 +166,9 @@ public static class Program
 
         // 0. Search Box
         _searchBox = new UiSearchBox(0, 0, 250, 34);
+        
+        // 0.5. Search Modal
+        _searchModal = new UiSearchModal();
 
         // 1. Asset Dropdown
         var assets = new List<string> { "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT" };
@@ -175,6 +181,7 @@ public static class Program
             if (fullList != null && fullList.Count > 0)
             {
                 _assetDropdown.Items = fullList;
+                _searchModal?.SetSymbols(fullList);
             }
         });
 
@@ -208,6 +215,16 @@ public static class Program
 
     private static void OnKeyChar(IKeyboard arg1, char arg2)
     {
+        // Search modal has highest priority
+        if (_searchModal != null && _searchModal.IsVisible)
+        {
+            if (char.IsLetterOrDigit(arg2) || char.IsWhiteSpace(arg2) || char.IsPunctuation(arg2))
+            {
+                _searchModal.AddChar(arg2);
+            }
+            return;
+        }
+        
         // Search box has priority
         if (_searchBox != null && _searchBox.IsFocused)
         {
@@ -233,6 +250,50 @@ public static class Program
 
     private static void OnKeyDown(IKeyboard arg1, Key arg2, int arg3)
     {
+        // Ctrl+K to open search modal
+        if (arg1.IsKeyPressed(Key.ControlLeft) && arg2 == Key.K)
+        {
+            if (_searchModal != null)
+            {
+                _searchModal.IsVisible = true;
+                _searchModal.Clear();
+            }
+            return;
+        }
+        
+        // Search modal has highest priority when visible
+        if (_searchModal != null && _searchModal.IsVisible)
+        {
+            if (arg2 == Key.Escape)
+            {
+                _searchModal.IsVisible = false;
+                _searchModal.Clear();
+            }
+            else if (arg2 == Key.Backspace)
+            {
+                _searchModal.Backspace();
+            }
+            else if (arg2 == Key.Up)
+            {
+                _searchModal.MoveSelectionUp();
+            }
+            else if (arg2 == Key.Down)
+            {
+                _searchModal.MoveSelectionDown();
+            }
+            else if (arg2 == Key.Enter)
+            {
+                var selected = _searchModal.GetSelectedSymbol();
+                if (!string.IsNullOrEmpty(selected))
+                {
+                    SwitchContext(selected, _currentTimeframe);
+                    _searchModal.IsVisible = false;
+                    _searchModal.Clear();
+                }
+            }
+            return;
+        }
+        
         // Search box has priority
         if (_searchBox != null && _searchBox.IsFocused)
         {
@@ -580,6 +641,25 @@ public static class Program
         // Render Toolbar (Top)
         _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y);
         _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _uiDropdowns, _uiButtons);
+        
+        // Render Search Modal (if visible or animating)
+        if (_searchModal != null)
+        {
+            // Smooth animation
+            if (_searchModal.IsVisible && _searchModal.AnimationProgress < 1)
+            {
+                _searchModal.AnimationProgress = Math.Min(1, _searchModal.AnimationProgress + 0.15f);
+            }
+            else if (!_searchModal.IsVisible && _searchModal.AnimationProgress > 0)
+            {
+                _searchModal.AnimationProgress = Math.Max(0, _searchModal.AnimationProgress - 0.15f);
+            }
+            
+            if (_searchModal.AnimationProgress > 0)
+            {
+                _searchModalRenderer.Render(_surface.Canvas, _window.Size.X, _window.Size.Y, _searchModal);
+            }
+        }
         
         _surface.Canvas.Flush();
     }

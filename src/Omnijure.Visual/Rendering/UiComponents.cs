@@ -109,3 +109,148 @@ public class UiSearchBox
         CursorPosition = 0;
     }
 }
+
+public class SearchResult
+{
+    public string Symbol { get; set; }
+    public string Exchange { get; set; }
+    public float Price { get; set; }
+    public float PercentChange { get; set; }
+    
+    public SearchResult(string symbol, string exchange = "Binance", float price = 0, float percentChange = 0)
+    {
+        Symbol = symbol;
+        Exchange = exchange;
+        Price = price;
+        PercentChange = percentChange;
+    }
+}
+
+public class UiSearchModal
+{
+    public bool IsVisible;
+    public string SearchText = "";
+    public int SelectedIndex = 0;
+    public int ScrollOffset = 0;
+    public int MaxVisibleResults = 10;
+    public float AnimationProgress = 0f; // 0 to 1 for fade in/out
+    
+    private List<string> _allSymbols = new List<string>();
+    private List<SearchResult> _filteredResults = new List<SearchResult>();
+    
+    public UiSearchModal()
+    {
+    }
+    
+    public void SetSymbols(List<string> symbols)
+    {
+        _allSymbols = symbols;
+        UpdateFilteredResults();
+    }
+    
+    public void UpdateSearchText(string text)
+    {
+        SearchText = text;
+        SelectedIndex = 0;
+        ScrollOffset = 0;
+        UpdateFilteredResults();
+    }
+    
+    public void AddChar(char c)
+    {
+        SearchText += c;
+        SelectedIndex = 0;
+        ScrollOffset = 0;
+        UpdateFilteredResults();
+    }
+    
+    public void Backspace()
+    {
+        if (SearchText.Length > 0)
+        {
+            SearchText = SearchText[..^1];
+            SelectedIndex = 0;
+            ScrollOffset = 0;
+            UpdateFilteredResults();
+        }
+    }
+    
+    public void Clear()
+    {
+        SearchText = "";
+        SelectedIndex = 0;
+        ScrollOffset = 0;
+        UpdateFilteredResults();
+    }
+    
+    public void MoveSelectionUp()
+    {
+        if (SelectedIndex > 0)
+        {
+            SelectedIndex--;
+            if (SelectedIndex < ScrollOffset)
+            {
+                ScrollOffset = SelectedIndex;
+            }
+        }
+    }
+    
+    public void MoveSelectionDown()
+    {
+        if (SelectedIndex < _filteredResults.Count - 1)
+        {
+            SelectedIndex++;
+            if (SelectedIndex >= ScrollOffset + MaxVisibleResults)
+            {
+                ScrollOffset = SelectedIndex - MaxVisibleResults + 1;
+            }
+        }
+    }
+    
+    public string GetSelectedSymbol()
+    {
+        if (_filteredResults.Count > 0 && SelectedIndex < _filteredResults.Count)
+        {
+            return _filteredResults[SelectedIndex].Symbol;
+        }
+        return null;
+    }
+    
+    public List<SearchResult> GetVisibleResults()
+    {
+        return _filteredResults.Skip(ScrollOffset).Take(MaxVisibleResults).ToList();
+    }
+    
+    public int GetTotalResultCount()
+    {
+        return _filteredResults.Count;
+    }
+    
+    private void UpdateFilteredResults()
+    {
+        if (string.IsNullOrEmpty(SearchText))
+        {
+            _filteredResults = _allSymbols.Take(50).Select(s => new SearchResult(s)).ToList();
+        }
+        else
+        {
+            _filteredResults = _allSymbols
+                .Where(s => s.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
+                .Take(100)
+                .Select(s => new SearchResult(s))
+                .ToList();
+        }
+    }
+    
+    public void UpdatePriceData(Dictionary<string, (float price, float change)> priceData)
+    {
+        foreach (var result in _filteredResults)
+        {
+            if (priceData.TryGetValue(result.Symbol, out var data))
+            {
+                result.Price = data.price;
+                result.PercentChange = data.change;
+            }
+        }
+    }
+}
