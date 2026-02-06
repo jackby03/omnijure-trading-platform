@@ -356,8 +356,31 @@ public static class Program
         if (visibleCandles < 10) visibleCandles = 10; 
         if (visibleCandles > 2000) visibleCandles = 2000;
         
+        // Future Scrolling: Allow going into negative index on the left (which means future on the right??)
+        // Wait, normally ScrollOffset=0 is Latest Candle at Right Edge.
+        // If we want empty space on the right, we need to start rendering starting from negative index?
+        // No, we render from Right to Left usually in loop? 
+        // Let's check ChartRenderer loop.
+        // It loops `i` from 0 to `visibleCandles`. `idx = i + scrollOffset`.
+        // x is calculated from `i`.
+        // `float x = width - axisWidth - (i * candleWidth)`
+        // So `i=0` is the Rightmost candle.
+        // If `scrollOffset = 0` -> `idx = 0` (Buffer[0] is latest). `i=0` draws Buffer[0] at Right Edge.
+        
+        // To show future space on the right, we need to have "indices" -1, -2, -3... at `i=0`, `i=1` etc.?
+        // No, `i` is screen position 0..Visible.
+        // If we want `i=0` (Right Edge) to be empty future, `idx` must be negative?
+        // `idx = i + scrollOffset`.
+        // If `scrollOffset` is negative (e.g. -10).
+        // `i=0` -> `idx = -10`. (Future).
+        // `i=10` -> `idx = 0`. (Latest Candle).
+        // So YES, allowing negative `scrollOffset` allows Future on the right.
+        
         if (_scrollOffset > _buffer.Count - visibleCandles) _scrollOffset = _buffer.Count - visibleCandles;
-        if (_scrollOffset < 0) _scrollOffset = 0;
+        
+        // Allow up to 50% screen width of future space
+        int minScroll = -(visibleCandles / 2);
+        if (_scrollOffset < minScroll) _scrollOffset = minScroll;
 
         // Calculate Auto-Min/Max
         float calcMax = float.MinValue;
@@ -368,6 +391,7 @@ public static class Program
             for (int i = 0; i < visibleCandles; i++)
             {
                 int idx = i + _scrollOffset;
+                if (idx < 0) continue; // Future
                 if (idx >= _buffer.Count) break;
                 
                 ref var c = ref _buffer[idx];
