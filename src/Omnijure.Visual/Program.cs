@@ -35,6 +35,7 @@ public static class Program
     private static List<UiDropdown> _uiDropdowns = new List<UiDropdown>();
     private static UiDropdown _assetDropdown;
     private static UiDropdown _intervalDropdown;
+    private static UiSearchBox _searchBox;
     
     // State
     private static string _currentSymbol = "BTCUSDT";
@@ -160,6 +161,9 @@ public static class Program
         _uiButtons.Clear();
         _uiDropdowns.Clear();
 
+        // 0. Search Box
+        _searchBox = new UiSearchBox(0, 0, 250, 34);
+
         // 1. Asset Dropdown
         var assets = new List<string> { "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT" };
         _assetDropdown = new UiDropdown(10, 5, 180, 30, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
@@ -204,6 +208,22 @@ public static class Program
 
     private static void OnKeyChar(IKeyboard arg1, char arg2)
     {
+        // Search box has priority
+        if (_searchBox != null && _searchBox.IsFocused)
+        {
+            if (char.IsLetterOrDigit(arg2) || char.IsWhiteSpace(arg2))
+            {
+                _searchBox.AddChar(arg2);
+                // Filter asset dropdown based on search
+                if (_assetDropdown != null)
+                {
+                    _assetDropdown.SearchQuery = _searchBox.Text;
+                }
+            }
+            return;
+        }
+        
+        // Fallback to dropdown search
         var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
         if (openDd != null)
         {
@@ -213,6 +233,34 @@ public static class Program
 
     private static void OnKeyDown(IKeyboard arg1, Key arg2, int arg3)
     {
+        // Search box has priority
+        if (_searchBox != null && _searchBox.IsFocused)
+        {
+            if (arg2 == Key.Backspace)
+            {
+                _searchBox.Backspace();
+                if (_assetDropdown != null) _assetDropdown.SearchQuery = _searchBox.Text;
+            }
+            else if (arg2 == Key.Escape)
+            {
+                _searchBox.IsFocused = false;
+                _searchBox.Clear();
+                if (_assetDropdown != null) _assetDropdown.SearchQuery = "";
+            }
+            else if (arg2 == Key.Enter && _assetDropdown != null)
+            {
+                var filtered = _assetDropdown.GetFilteredItems();
+                if (filtered.Count > 0)
+                {
+                    SwitchContext(filtered[0], _currentTimeframe);
+                    _searchBox.Clear();
+                    _searchBox.IsFocused = false;
+                    if (_assetDropdown != null) _assetDropdown.SearchQuery = "";
+                }
+            }
+            return;
+        }
+        
         var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
         if (openDd != null)
         {
@@ -271,6 +319,17 @@ public static class Program
     { 
         if (arg2 == MouseButton.Left) 
         {
+            // Check search box first
+            if (_searchBox != null && _searchBox.Contains(_mousePos.X, _mousePos.Y))
+            {
+                _searchBox.IsFocused = true;
+                return;
+            }
+            else if (_searchBox != null)
+            {
+                _searchBox.IsFocused = false;
+            }
+            
             UiDropdown clickedDd = null;
             foreach(var dd in _uiDropdowns)
             {
@@ -519,7 +578,8 @@ public static class Program
         _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades);
         
         // Render Toolbar (Top)
-        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _uiDropdowns, _uiButtons);
+        _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y);
+        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _uiDropdowns, _uiButtons);
         
         _surface.Canvas.Flush();
     }
