@@ -23,6 +23,7 @@ public static class Program
     // Data
     private static RingBuffer<Candle> _buffer;
     private static Omnijure.Core.Network.BinanceClient _binance;
+    private static OrderBook _orderBook;
     
     // State
     private static string _currentSymbol = "BTCUSDT";
@@ -98,7 +99,8 @@ public static class Program
         _buffer = new RingBuffer<Candle>(4096);
         
         // 4. REAL DATA (The Metal)
-        _binance = new Omnijure.Core.Network.BinanceClient(_buffer);
+        _orderBook = new OrderBook();
+        _binance = new Omnijure.Core.Network.BinanceClient(_buffer, _orderBook);
         _ = _binance.ConnectAsync(_currentSymbol, _currentTimeframe);
         
         // 3. Init Mind
@@ -416,7 +418,7 @@ public static class Program
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
         
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY);
+        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook);
         _surface.Canvas.Flush();
     }
     

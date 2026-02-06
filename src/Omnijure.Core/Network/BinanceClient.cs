@@ -15,11 +15,13 @@ public class BinanceClient
     private readonly string _baseUrl = "wss://stream.binance.com:9443/ws/";
     private ClientWebSocket _socket;
     private readonly RingBuffer<Candle> _buffer;
+    private readonly OrderBook _orderBook;
     private CancellationTokenSource _cts;
 
-    public BinanceClient(RingBuffer<Candle> buffer)
+    public BinanceClient(RingBuffer<Candle> buffer, OrderBook orderBook)
     {
         _buffer = buffer;
+        _orderBook = orderBook;
     }
     public async Task ConnectAsync(string symbol = "BTCUSDT", string interval = "1m")
     {
@@ -46,17 +48,16 @@ public class BinanceClient
         
         try 
         {
-            // WebSocket: symbol must be lowercase
-            string streamName = $"{symbol.ToLower()}@kline_{interval}";
-            string url = $"{_baseUrl}{streamName}"; // _baseUrl was "wss://.../ws/btcusdt@kline_", need to fix base url or logic
+            // Use combined streams for Klines + Depth
+            // wss://stream.binance.com:9443/stream?streams=<streamName1>/<streamName2>
+            string klineStream = $"{symbol.ToLower()}@kline_{interval}";
+            string depthStream = $"{symbol.ToLower()}@depth20@100ms";
             
-            // Refactoring URL logic slightly requires changing _baseUrl or just using full string here.
-            // Let's hardcode the base wss://stream.binance.com:9443/ws/
-            string fullUrl = $"wss://stream.binance.com:9443/ws/{streamName}";
+            string fullUrl = $"wss://stream.binance.com:9443/stream?streams={klineStream}/{depthStream}";
             
-            Console.WriteLine($"[Metal] Connecting to Stream ({fullUrl})...");
+            Console.WriteLine($"[Metal] Connecting to Combined Stream ({fullUrl})...");
             await _socket.ConnectAsync(new Uri(fullUrl), CancellationToken.None);
-            Console.WriteLine($"[Metal] Connected! {symbol} [{interval}]");
+            Console.WriteLine($"[Metal] Connected to Combined Streams for {symbol}!");
             
             _ = ReceiveLoop();
         }
@@ -135,49 +136,31 @@ public class BinanceClient
 
     private void ParseAndUpdate(string json)
     {
-        // Format: {"e":"kline",..."k":{"t":1234,"o":"50000","c":"50001",...}}
         try
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             
-            if (root.TryGetProperty("k", out var k))
+            // Combined stream format: {"stream": "...", "data": {...}}
+            if (root.TryGetProperty("data", out var data))
             {
-                long startTime = k.GetProperty("t").GetInt64();
-                bool isClosed = k.GetProperty("x").GetBoolean(); // "x": Is this kline closed? Yes/No
+                string stream = root.GetProperty("stream").GetString() ?? "";
                 
-                float open = float.Parse(k.GetProperty("o").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-                float close = float.Parse(k.GetProperty("c").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-                float high = float.Parse(k.GetProperty("h").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-                float low = float.Parse(k.GetProperty("l").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-                float vol = float.Parse(k.GetProperty("v").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-                
-                var candle = new Candle
+                if (stream.Contains("@kline"))
                 {
-                    Open = open, Close = close, High = high, Low = low, Volume = vol, Timestamp = startTime
-                };
-
-                // SMART UPDATE LOGIC
-                // Check if the last candle in buffer matches this timestamp
-                if (_buffer.Count > 0)
-                {
-                    ref var last = ref _buffer[0]; // 0 is Head (Latest)
-                    if (last.Timestamp == startTime)
-                    {
-                        // Same candle, just update it in place
-                        last = candle; 
-                        // Console.Write("."); // Tick update
-                    }
-                    else if (startTime > last.Timestamp)
-                    {
-                        // New candle commenced
-                        _buffer.Push(candle);
-                        // Console.WriteLine("|"); // New Bar
-                    }
+                    ParseKline(data);
                 }
-                else
+                else if (stream.Contains("@depth"))
                 {
-                    _buffer.Push(candle);
+                    ParseDepth(data);
+                }
+            }
+            else
+            {
+                // Single stream fallback
+                if (root.TryGetProperty("e", out var e) && e.GetString() == "kline")
+                {
+                    ParseKline(root);
                 }
             }
         }
@@ -185,5 +168,65 @@ public class BinanceClient
         {
             // Ignore
         }
+    }
+
+    private void ParseKline(JsonElement kline)
+    {
+        if (kline.TryGetProperty("k", out var k))
+        {
+            long startTime = k.GetProperty("t").GetInt64();
+            float open = float.Parse(k.GetProperty("o").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            float close = float.Parse(k.GetProperty("c").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            float high = float.Parse(k.GetProperty("h").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            float low = float.Parse(k.GetProperty("l").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            float vol = float.Parse(k.GetProperty("v").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            
+            var candle = new Candle
+            {
+                Open = open, Close = close, High = high, Low = low, Volume = vol, Timestamp = startTime
+            };
+
+            if (_buffer.Count > 0)
+            {
+                ref var last = ref _buffer[0];
+                if (last.Timestamp == startTime) last = candle;
+                else if (startTime > last.Timestamp) _buffer.Push(candle);
+            }
+            else
+            {
+                _buffer.Push(candle);
+            }
+        }
+    }
+
+    private void ParseDepth(JsonElement depth)
+    {
+        // Format for @depth20: {"lastUpdateId":..., "bids": [["price","qty"],...], "asks": [...]}
+        var bids = new List<OrderBookEntry>();
+        var asks = new List<OrderBookEntry>();
+
+        if (depth.TryGetProperty("bids", out var bList))
+        {
+            foreach (var b in bList.EnumerateArray())
+            {
+                bids.Add(new OrderBookEntry {
+                    Price = float.Parse(b[0].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture),
+                    Quantity = float.Parse(b[1].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
+                });
+            }
+        }
+
+        if (depth.TryGetProperty("asks", out var aList))
+        {
+            foreach (var a in aList.EnumerateArray())
+            {
+                asks.Add(new OrderBookEntry {
+                    Price = float.Parse(a[0].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture),
+                    Quantity = float.Parse(a[1].GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
+                });
+            }
+        }
+
+        _orderBook.Update(bids, asks);
     }
 }

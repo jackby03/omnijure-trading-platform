@@ -1,6 +1,7 @@
 
 using SkiaSharp;
 using Omnijure.Core.DataStructures;
+using Silk.NET.Maths;
 
 namespace Omnijure.Visual.Rendering;
 
@@ -46,17 +47,16 @@ public class ChartRenderer
 
     // Render method...
 
-    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice)
+    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice, Vector2D<float> mousePos)
     {
-        // 1. Layout Margins for Axes
-        // We want axes OUTSIDE the chart body.
+        // 1. Layout Margins
         const int RightAxisWidth = 60;
         const int BottomAxisHeight = 30;
         
         int chartW = width - RightAxisWidth;
         int chartH = height - BottomAxisHeight;
         
-        // Clear background area (Sidebar is handled by LayoutManager, but this is Chart Area)
+        // Clear
         using var bgPaint = new SKPaint { Color = new SKColor(13, 17, 23) };
         canvas.DrawRect(0, 0, width, height, bgPaint);
 
@@ -72,14 +72,12 @@ public class ChartRenderer
         
         float candleWidth = (float)chartW / visibleCandles;
         
-        // 3. Grid & Axes
-        // CLIPPING: Draw content only in Chart Body
+        // 3. Grid & Axes (Clipped Content)
         canvas.Save();
         canvas.ClipRect(new SKRect(0, 0, chartW, chartH));
         
         DrawGrid(canvas, chartW, chartH, minPrice, maxPrice, visibleCandles, candleWidth);
         
-        // Switch Draw methods
         switch(chartType)
         {
             case ChartType.Candles: DrawCandles(canvas, buffer, visibleCandles, scrollOffset, candleWidth, chartH, minPrice, maxPrice); break;
@@ -87,11 +85,24 @@ public class ChartRenderer
             case ChartType.Area: DrawAreaChart(canvas, buffer, visibleCandles, scrollOffset, candleWidth, chartH, minPrice, maxPrice); break;
         }
         
+        // CROSSHAIR LINES (Inside Chart Clip)
+        bool isHoverChart = mousePos.X >= 0 && mousePos.X <= chartW && mousePos.Y >= 0 && mousePos.Y <= chartH;
+        if (isHoverChart)
+        {
+             DrawCrosshairLines(canvas, mousePos.X, mousePos.Y, chartW, chartH);
+        }
+        
         canvas.Restore(); // End Clip
         
         // 5. Draw Axes (Outside Clip)
         DrawPriceAxis(canvas, chartW, chartH, width, height, minPrice, maxPrice);
         DrawTimeAxis(canvas, chartW, chartH, buffer, scrollOffset, visibleCandles, candleWidth, interval);
+        
+        // CROSSHAIR LABELS (Over Axes)
+        if (isHoverChart)
+        {
+            DrawCrosshairLabels(canvas, mousePos.X, mousePos.Y, chartW, chartH, minPrice, maxPrice, buffer, scrollOffset, visibleCandles, candleWidth, interval);
+        }
 
         // 6. Header
         float curPrice = buffer.Count > 0 ? buffer[0].Close : 0;
@@ -372,8 +383,77 @@ public class ChartRenderer
                 
                 float xStart = width - ((i + 1) * candleWidth);
                 
-                canvas.DrawRect(xStart, yTop, width - xStart, yBottom - yTop, obBullish);
             }
         }
+    }
+    private void DrawCrosshairLines(SKCanvas canvas, float x, float y, int w, int h)
+    {
+        using var paint = new SKPaint 
+        { 
+            Color = SKColors.Gray, 
+            Style = SKPaintStyle.Stroke, 
+            StrokeWidth = 1, 
+            PathEffect = SKPathEffect.CreateDash(new float[] { 4, 4 }, 0) 
+        };
+        
+        // Horizontal
+        canvas.DrawLine(0, y, w, y, paint);
+        // Vertical
+        canvas.DrawLine(x, 0, x, h, paint);
+    }
+    
+    private void DrawCrosshairLabels(SKCanvas canvas, float x, float y, int chartW, int chartH, float min, float max, RingBuffer<Candle> buffer, int scrollOffset, int visible, float candleWidth, string interval)
+    {
+        using var bgPaint = new SKPaint { Color = new SKColor(50, 50, 50), Style = SKPaintStyle.Fill };
+        using var textPaint = new SKPaint { Color = SKColors.White, TextSize = 11, IsAntialias = true };
+        
+        // 1. Price Label (Right Axis)
+        // Map Y back to Price
+        // Y = Height - (Norm * Height)
+        // Norm * Height = Height - Y
+        // Norm = (Height - Y) / Height
+        // Price = Min + Norm * Range
+        float range = max - min;
+        float norm = (chartH - y) / chartH;
+        float price = min + (norm * range);
+        
+        string priceLabel = price.ToString("F2");
+        float pw = textPaint.MeasureText(priceLabel);
+        float ph = 14; 
+        
+        SKRect priceRect = new SKRect(chartW, y - ph/2, chartW + pw + 10, y + ph/2);
+        canvas.DrawRect(priceRect, bgPaint);
+        canvas.DrawText(priceLabel, chartW + 5, y + 4, textPaint);
+        
+        // 2. Time Label (Bottom Axis)
+        // Map X back to Index
+        // x = (visible - 1 - i) * cw + cw/2
+        // i approx = (visible - 1) - (x / cw)
+        float iFloat = (visible - 1) - ((x - candleWidth/2) / candleWidth);
+        int i = (int)Math.Round(iFloat);
+        int idx = i + scrollOffset;
+        
+        DateTime time = DateTime.UtcNow; // Fallback
+        
+        var latestTs = (buffer.Count > 0) ? buffer[0].Timestamp : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        DateTime latestTime = DateTimeOffset.FromUnixTimeMilliseconds(latestTs).LocalDateTime;
+        TimeSpan intervalSpan = ParseInterval(interval);
+
+        if (idx < 0)
+        {
+             time = latestTime.Add(intervalSpan * (-idx));
+        }
+        else if (idx < buffer.Count && idx >= 0)
+        {
+            time = DateTimeOffset.FromUnixTimeMilliseconds(buffer[idx].Timestamp).LocalDateTime;
+        }
+        // If idx too large, use oldest time? Or hide?
+        
+        string timeLabel = time.ToString("dd MMM HH:mm");
+        float tw = textPaint.MeasureText(timeLabel);
+        
+        SKRect timeRect = new SKRect(x - tw/2 - 5, chartH, x + tw/2 + 5, chartH + 18);
+        canvas.DrawRect(timeRect, bgPaint);
+        canvas.DrawText(timeLabel, x - tw/2, chartH + 14, textPaint);
     }
 }
