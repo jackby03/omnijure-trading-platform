@@ -218,7 +218,8 @@ public static class Program
         // Search modal has highest priority
         if (_searchModal != null && _searchModal.IsVisible)
         {
-            if (char.IsLetterOrDigit(arg2) || char.IsWhiteSpace(arg2) || char.IsPunctuation(arg2))
+            // Allow most printable characters
+            if (!char.IsControl(arg2))
             {
                 _searchModal.AddChar(arg2);
             }
@@ -418,8 +419,29 @@ public static class Program
                 if (_mousePos.X >= modalX && _mousePos.X <= modalX + modalWidth &&
                     _mousePos.Y >= modalY && _mousePos.Y <= modalY + modalHeight)
                 {
-                    // Calculate item click area (starts after header and search box)
-                    float itemStartY = modalY + 18 + 48 + 18 + 44 + 58 + 14 + 18; // All header elements
+                    // Calculate tab click area
+                    float tabStartY = modalY + 142; // y after search box spacer
+                    if (_mousePos.Y >= tabStartY && _mousePos.Y <= tabStartY + 30)
+                    {
+                        float tabX = modalX + 24;
+                        string[] categories = Enum.GetNames(typeof(AssetCategory));
+                        using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+                        for (int i = 0; i < categories.Length; i++)
+                        {
+                            string catLabel = categories[i];
+                            float labelWidth = font.MeasureText(catLabel) + 20;
+                            if (_mousePos.X >= tabX && _mousePos.X <= tabX + labelWidth)
+                            {
+                                _searchModal.SelectedCategory = (AssetCategory)i;
+                                _searchModal.UpdateFilteredResults();
+                                return;
+                            }
+                            tabX += labelWidth + 10;
+                        }
+                    }
+
+                    // Calculate item click area (starts after all header elements)
+                    float itemStartY = modalY + 142 + 38 + 18 + 18; // Updated for tabs
                     float itemHeight = 48;
                     
                     if (_mousePos.Y >= itemStartY)

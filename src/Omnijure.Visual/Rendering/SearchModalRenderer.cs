@@ -23,6 +23,7 @@ public class SearchModalRenderer
     private readonly SKFont _fontLarge;
     private readonly SKFont _fontSmall;
     private readonly SKFont _fontBold;
+    private readonly SKFont _fontExtraSmall;
 
     public SearchModalRenderer()
     {
@@ -86,6 +87,7 @@ public class SearchModalRenderer
         _fontLarge = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 16);
         _fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
         _fontBold = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 14);
+        _fontExtraSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 9);
     }
 
     public void Render(SKCanvas canvas, int screenWidth, int screenHeight, UiSearchModal modal)
@@ -153,9 +155,38 @@ public class SearchModalRenderer
         
         y += 58;
         
+        // Category Tabs
+        float tabX = modalX + 24;
+        string[] categories = Enum.GetNames(typeof(AssetCategory));
+        for (int i = 0; i < categories.Length; i++)
+        {
+            AssetCategory cat = (AssetCategory)i;
+            string catLabel = categories[i];
+            float labelWidth = _fontSmall.MeasureText(catLabel) + 20;
+            var tabRect = new SKRect(tabX, y, tabX + labelWidth, y + 24);
+            
+            bool isSelected = modal.SelectedCategory == cat;
+            if (isSelected)
+            {
+                using var p = new SKPaint { Color = SKColors.White, Style = SKPaintStyle.Fill, IsAntialias = true };
+                canvas.DrawRoundRect(tabRect, 12, 12, p);
+                using var tp = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+                canvas.DrawText(catLabel, tabRect.Left + 10, tabRect.MidY + 4, _fontSmall, tp);
+            }
+            else
+            {
+                using var tp = new SKPaint { Color = new SKColor(200, 205, 210), IsAntialias = true };
+                canvas.DrawText(catLabel, tabRect.Left + 10, tabRect.MidY + 4, _fontSmall, tp);
+            }
+            
+            tabX += labelWidth + 10;
+        }
+        
+        y += 38;
+        
         // Separator line
-        canvas.DrawLine(modalX + 20, y, modalX + modalWidth - 20, y, _separatorPaint);
-        y += 14;
+        canvas.DrawLine(modalX, y, modalX + modalWidth, y, _separatorPaint);
+        y += 18;
         
         // Results header
         int totalResults = modal.GetTotalResultCount();
@@ -195,8 +226,24 @@ public class SearchModalRenderer
                 // Symbol (left, bold)
                 canvas.DrawText(result.Symbol, itemRect.Left + 12, itemRect.MidY + 2, _fontBold, _textPaintLarge);
                 
-                // Exchange (below symbol, small)
-                canvas.DrawText(result.Exchange, itemRect.Left + 12, itemRect.MidY + 16, _fontSmall, _textPaintSmall);
+                // Exchange display - pills like TradingView
+                float exchangeX = itemRect.Left + 12;
+                float exchangeY = itemRect.MidY + 16;
+                
+                foreach (var exch in result.Exchanges)
+                {
+                    float exchWidth = _fontExtraSmall.MeasureText(exch) + 8;
+                    var exchRect = new SKRect(exchangeX, exchangeY - 8, exchangeX + exchWidth, exchangeY + 4);
+                    
+                    using var exchBg = new SKPaint { Color = new SKColor(40, 45, 55), Style = SKPaintStyle.Fill, IsAntialias = true };
+                    canvas.DrawRoundRect(exchRect, 2, 2, exchBg);
+                    
+                    using var exchTxt = new SKPaint { Color = new SKColor(200, 205, 210), IsAntialias = true };
+                    canvas.DrawText(exch, exchRect.Left + 4, exchRect.MidY + 3, _fontExtraSmall, exchTxt);
+                    
+                    exchangeX += exchWidth + 6;
+                    if (exchangeX > itemRect.MidX) break; // Don't overflow to the price area
+                }
                 
                 // Price and change (right side)
                 if (result.Price > 0)
