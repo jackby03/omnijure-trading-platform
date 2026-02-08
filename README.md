@@ -8,7 +8,7 @@
 
 Omnijure is a professional-grade cryptocurrency trading platform that combines real-time market data visualization, advanced technical analysis, and AI-powered decision-making capabilities. Built with a unique three-layer architecture (Metal/Mind/Visual), it delivers institutional-quality trading tools with a modern, responsive interface.
 
-![Omnijure Platform](https://imgur.com/a/pwWSUTV)
+![Omnijure Platform](https://i.imgur.com/3rZ3l4x.png)
 
 ## ✨ Features
 
