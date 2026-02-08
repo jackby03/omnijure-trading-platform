@@ -8,7 +8,7 @@
 
 Omnijure is a professional-grade cryptocurrency trading platform that combines real-time market data visualization, advanced technical analysis, and AI-powered decision-making capabilities. Built with a unique three-layer architecture (Metal/Mind/Visual), it delivers institutional-quality trading tools with a modern, responsive interface.
 
-![Omnijure Platform](docs/screenshot.png)
+![Omnijure Platform](https://imgur.com/a/pwWSUTV)
 
 ## ✨ Features
 
@@ -48,7 +48,7 @@ Omnijure follows a three-layer architecture:
 ```
 ┌─────────────────────────────────────────┐
 │         Omnijure.Visual (C#)            │  ← UI Layer
-│   Silk.NET + SkiaSharp + OpenGL        │
+│   Silk.NET + SkiaSharp + OpenGL         │
 ├─────────────────────────────────────────┤
 │         Omnijure.Mind (Clojure)         │  ← AI/Strategy Layer
 │      ClojureCLR + BERT Models           │
@@ -202,9 +202,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact
 
-- **Author**: Your Name
-- **Email**: your.email@example.com
-- **Twitter**: [@yourusername](https://twitter.com/yourusername)
+- **Author**: Jackby03
+- **Email**: jackby03@protonmail.com
+- **Twitter**: [@ijackby03](https://twitter.com/ijackby03)
 
 ## ⚠️ Disclaimer
 
