@@ -631,9 +631,8 @@ public static class Program
         }
         else if (_isDragging)
         {
-            // Horizontal Pan
-            _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom)); 
-            if (_scrollOffset < 0) _scrollOffset = 0;
+            // Horizontal Pan (TradingView-style: allow free scrolling into future)
+            _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom));
             
             // Vertical Pan
             if (System.Math.Abs(deltaY) > 0.5f)
@@ -701,10 +700,12 @@ public static class Program
         int visibleCandles = (int)Math.Ceiling(chartWidth / candleWidth);
         if (visibleCandles < 2) visibleCandles = 2; 
 
-        if (_scrollOffset > _buffer.Count - visibleCandles) _scrollOffset = _buffer.Count - visibleCandles;
-        
-        // Allow up to 50% screen width of future space
-        int minScroll = -(visibleCandles / 2);
+        // Limit scrolling past historical data
+        if (_scrollOffset > _buffer.Count - visibleCandles)
+            _scrollOffset = _buffer.Count - visibleCandles;
+
+        // TradingView-style: Allow unlimited scrolling into future (up to 10 screens worth)
+        int minScroll = -(visibleCandles * 10);
         if (_scrollOffset < minScroll) _scrollOffset = minScroll;
 
         // Calculate Auto-Min/Max
