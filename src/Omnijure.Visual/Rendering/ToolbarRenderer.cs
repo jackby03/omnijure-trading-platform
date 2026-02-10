@@ -129,7 +129,7 @@ public class ToolbarRenderer
 
     public bool IsDraggingWindow => _isDraggingWindow;
 
-    public void Render(SKCanvas canvas, SKRect rect, UiSearchBox searchBox, List<UiDropdown> dropdowns, List<UiButton> buttons)
+    public void Render(SKCanvas canvas, SKRect rect, UiSearchBox searchBox, UiDropdown assetInfo, List<UiDropdown> dropdowns, List<UiButton> buttons)
     {
         // Background
         canvas.DrawRect(rect, _gradientPaint);
@@ -175,33 +175,29 @@ public class ToolbarRenderer
         canvas.DrawLine(x, rect.Top + 5, x, rect.Bottom - 5, sepPaint);
         x += 8;
         
-        // 2. Asset info
-        if (dropdowns != null)
+        // 2. Asset info (read-only, no clickeable)
+        if (assetInfo != null)
         {
-            var assetDd = dropdowns.FirstOrDefault(d => d.Label == "Asset");
-            if (assetDd != null)
+            float iconSz = rect.Height - 8;
+            CryptoIconProvider.DrawCryptoIcon(canvas, assetInfo.SelectedItem, x, rect.Top + 4, (int)iconSz);
+            x += iconSz + 4;
+            canvas.DrawText(assetInfo.SelectedItem, x, midY + 4, _font, _textPaintLarge);
+            x += _font.MeasureText(assetInfo.SelectedItem) + 6;
+            
+            if (assetInfo.CurrentPrice > 0)
             {
-                float iconSz = rect.Height - 8;
-                CryptoIconProvider.DrawCryptoIcon(canvas, assetDd.SelectedItem, x, rect.Top + 4, (int)iconSz);
-                x += iconSz + 4;
-                canvas.DrawText(assetDd.SelectedItem, x, midY + 4, _font, _textPaintLarge);
-                x += _font.MeasureText(assetDd.SelectedItem) + 6;
+                string priceText = $"${assetInfo.CurrentPrice:F2}";
+                canvas.DrawText(priceText, x, midY + 4, _fontSmall, _textPaint);
+                x += _fontSmall.MeasureText(priceText) + 5;
                 
-                if (assetDd.CurrentPrice > 0)
-                {
-                    string priceText = $"${assetDd.CurrentPrice:F2}";
-                    canvas.DrawText(priceText, x, midY + 4, _fontSmall, _textPaint);
-                    x += _fontSmall.MeasureText(priceText) + 5;
-                    
-                    SKColor cc = assetDd.PercentChange >= 0 ? ThemeManager.Success : ThemeManager.Error;
-                    string ct = $"{(assetDd.PercentChange >= 0 ? "+" : "")}{assetDd.PercentChange:F2}%";
-                    using var cp = new SKPaint { Color = cc, IsAntialias = true };
-                    canvas.DrawText(ct, x, midY + 4, _fontSmall, cp);
-                    x += _fontSmall.MeasureText(ct) + 8;
-                }
-                canvas.DrawLine(x, rect.Top + 5, x, rect.Bottom - 5, sepPaint);
-                x += 8;
+                SKColor cc = assetInfo.PercentChange >= 0 ? ThemeManager.Success : ThemeManager.Error;
+                string ct = $"{(assetInfo.PercentChange >= 0 ? "+" : "")}{assetInfo.PercentChange:F2}%";
+                using var cp = new SKPaint { Color = cc, IsAntialias = true };
+                canvas.DrawText(ct, x, midY + 4, _fontSmall, cp);
+                x += _fontSmall.MeasureText(ct) + 8;
             }
+            canvas.DrawLine(x, rect.Top + 5, x, rect.Bottom - 5, sepPaint);
+            x += 8;
         }
         
         // 3. Interval Dropdown

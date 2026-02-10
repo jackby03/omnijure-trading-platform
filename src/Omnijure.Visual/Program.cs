@@ -13,7 +13,7 @@ using Silk.NET.Input;
 
 namespace Omnijure.Visual;
 
-public static class Program
+public static partial class Program
 {
     private static IWindow _window;
     private static GL _gl;
@@ -75,12 +75,13 @@ public static class Program
         // Let's print env vars for debug if we crash again.
         
         var options = WindowOptions.Default;
-        options.Size = new Vector2D<int>(1920, 1080);
+        options.Size = new Vector2D<int>(1440, 900);
         options.Title = "Omnijure";
         options.VSync = true;
         options.FramesPerSecond = 144;
         options.UpdatesPerSecond = 144;
-        options.WindowBorder = WindowBorder.Hidden; // Custom titlebar
+        options.WindowBorder = WindowBorder.Hidden;
+        options.WindowState = WindowState.Normal;
 
         _window = Window.Create(options);
 
@@ -112,6 +113,20 @@ public static class Program
 
         // 1. Init Raw GL
         _gl = _window.CreateOpenGL();
+        
+        // Center window on screen
+        try
+        {
+            var monitor = _window.Monitor;
+            if (monitor.VideoMode.Resolution.HasValue)
+            {
+                var res = monitor.VideoMode.Resolution.Value;
+                _window.Position = new Vector2D<int>(
+                    (res.X - _window.Size.X) / 2,
+                    (res.Y - _window.Size.Y) / 2);
+            }
+        }
+        catch { /* Monitor info not available */ }
         
         // 2. Init Skia
         using var glInterface = GRGlInterface.Create();
@@ -180,16 +195,16 @@ public static class Program
         _uiButtons.Clear();
         _uiDropdowns.Clear();
 
-        // 0. Search Box
-        _searchBox = new UiSearchBox(0, 0, 250, 34);
+        // 0. Search Box (rect se actualiza en ToolbarRenderer.Render)
+        _searchBox = new UiSearchBox(0, 0, 0, 0);
         
         // 0.5. Search Modal
         _searchModal = new UiSearchModal();
 
-        // 1. Asset Dropdown
+        // 1. Asset Dropdown (data only - not clickeable, uses search modal)
         var assets = new List<string> { "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT" };
-        _assetDropdown = new UiDropdown(10, 5, 180, 30, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
-        _uiDropdowns.Add(_assetDropdown);
+        _assetDropdown = new UiDropdown(0, 0, 0, 0, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
+        // NOT added to _uiDropdowns - asset selection uses search modal
 
         // Fetch full list in background and preload crypto icons
         Task.Run(async () => {
@@ -206,167 +221,21 @@ public static class Program
             }
         });
 
-        // 2. Interval Dropdown
+        // 2. Interval Dropdown (clickeable)
         var intervals = new List<string> { "1m", "5m", "15m", "1h", "4h", "1d" };
-        _intervalDropdown = new UiDropdown(200, 5, 100, 30, "Interval", intervals, (tf) => SwitchContext(_currentSymbol, tf));
+        _intervalDropdown = new UiDropdown(0, 0, 0, 0, "Interval", intervals, (tf) => SwitchContext(_currentSymbol, tf));
         _uiDropdowns.Add(_intervalDropdown);
 
-        // 3. Chart Type Dropdown
+        // 3. Chart Type Dropdown (data only - rendered in toolbar, not as separate dropdown)
         var chartTypes = new List<string> { "Candles", "Line", "Area" };
-        _chartTypeDropdown = new UiDropdown(310, 5, 100, 30, "Chart", chartTypes, (type) => {
+        _chartTypeDropdown = new UiDropdown(0, 0, 0, 0, "Chart", chartTypes, (type) => {
             if (type == "Candles") _chartType = ChartType.Candles;
             else if (type == "Line") _chartType = ChartType.Line;
             else if (type == "Area") _chartType = ChartType.Area;
         });
-        _uiDropdowns.Add(_chartTypeDropdown);
     }
 
-    private static void OnResize(Vector2D<int> size)
-    {
-        // Update Viewport
-        _gl?.Viewport(size);
-
-        CreateSurface(size);
-    }
-
-    private static void OnKeyChar(IKeyboard arg1, char arg2)
-    {
-        // Search modal has highest priority
-        if (_searchModal != null && _searchModal.IsVisible)
-        {
-            // Stop processing if it's a control character we don't handle here
-            if (char.IsControl(arg2)) return;
-
-            _searchModal.AddChar(arg2);
-            return;
-        }
-        
-        // Search box has priority
-        if (_searchBox != null && _searchBox.IsFocused)
-        {
-            if (char.IsLetterOrDigit(arg2) || char.IsWhiteSpace(arg2))
-            {
-                _searchBox.AddChar(arg2);
-                // Filter asset dropdown based on search
-                if (_assetDropdown != null)
-                {
-                    _assetDropdown.SearchQuery = _searchBox.Text;
-                }
-            }
-            return;
-        }
-        
-        // Fallback to dropdown search
-        var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
-        if (openDd != null)
-        {
-            openDd.SearchQuery += arg2;
-        }
-    }
-
-    private static void OnKeyDown(IKeyboard arg1, Key arg2, int arg3)
-    {
-        // Ctrl+K to open search modal
-        if (arg1.IsKeyPressed(Key.ControlLeft) && arg2 == Key.K)
-        {
-            if (_searchModal != null)
-            {
-                _searchModal.IsVisible = true;
-                _searchModal.Clear();
-            }
-            return;
-        }
-        
-        // Search modal has highest priority when visible
-        if (_searchModal != null && _searchModal.IsVisible)
-        {
-            if (arg2 == Key.Escape)
-            {
-                _searchModal.IsVisible = false;
-                _searchModal.Clear();
-            }
-            else if (arg2 == Key.Backspace)
-            {
-                _searchModal.Backspace();
-            }
-            else if (arg2 == Key.Up)
-            {
-                _searchModal.MoveSelectionUp();
-            }
-            else if (arg2 == Key.Down)
-            {
-                _searchModal.MoveSelectionDown();
-            }
-            else if (arg2 == Key.Enter)
-            {
-                var selected = _searchModal.GetSelectedSymbol();
-                if (!string.IsNullOrEmpty(selected))
-                {
-                    SwitchContext(selected, _currentTimeframe);
-                    _searchModal.IsVisible = false;
-                    _searchModal.Clear();
-                }
-            }
-            return;
-        }
-        
-        // Search box has priority
-        if (_searchBox != null && _searchBox.IsFocused)
-        {
-            if (arg2 == Key.Backspace)
-            {
-                _searchBox.Backspace();
-                if (_assetDropdown != null) _assetDropdown.SearchQuery = _searchBox.Text;
-            }
-            else if (arg2 == Key.Escape)
-            {
-                _searchBox.IsFocused = false;
-                _searchBox.Clear();
-                if (_assetDropdown != null) _assetDropdown.SearchQuery = "";
-            }
-            else if (arg2 == Key.Enter && _assetDropdown != null)
-            {
-                var filtered = _assetDropdown.GetFilteredItems();
-                if (filtered.Count > 0)
-                {
-                    SwitchContext(filtered[0], _currentTimeframe);
-                    _searchBox.Clear();
-                    _searchBox.IsFocused = false;
-                    if (_assetDropdown != null) _assetDropdown.SearchQuery = "";
-                }
-            }
-            return;
-        }
-        
-        var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
-        if (openDd != null)
-        {
-            if (arg2 == Key.Escape) openDd.IsOpen = false;
-            else if (arg2 == Key.Backspace && openDd.SearchQuery.Length > 0)
-            {
-                openDd.SearchQuery = openDd.SearchQuery[..^1];
-            }
-            return;
-        }
-
-        if (arg2 == Key.Space) { _scrollOffset = 0; _zoom = 1.0f; }
-
-        // Delete last drawing (Ctrl+Z-like behavior for now)
-        if (arg2 == Key.Delete && _drawingState.Objects.Count > 0)
-        {
-            _drawingState.Objects.RemoveAt(_drawingState.Objects.Count - 1);
-        }
-
-        // Timeframe Switching
-        if (arg2 == Key.Number1) SwitchContext(_currentSymbol, "1m");
-        if (arg2 == Key.Number2) SwitchContext(_currentSymbol, "5m");
-        if (arg2 == Key.Number3) SwitchContext(_currentSymbol, "15m");
-        // Asset Switching
-        if (arg2 == Key.F1) SwitchContext("BTCUSDT", _currentTimeframe);
-        if (arg2 == Key.F2) SwitchContext("ETHUSDT", _currentTimeframe);
-        if (arg2 == Key.F3) SwitchContext("SOLUSDT", _currentTimeframe);
-        if (arg2 == Key.F4) SwitchContext("XRPUSDT", _currentTimeframe);
-    }
+    // Input handlers moved to Program.Input.cs
 
     private static void SwitchContext(string symbol, string interval)
     {
@@ -922,7 +791,7 @@ public static class Program
         
         // Render Toolbar (Top)
         _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y);
-        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _uiDropdowns, _uiButtons);
+        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _assetDropdown, _uiDropdowns, _uiButtons);
         
         // Render Search Modal (if visible or animating)
         if (_searchModal != null)

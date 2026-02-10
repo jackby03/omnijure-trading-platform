@@ -125,23 +125,6 @@ public class SidebarRenderer
         }
     }
 
-    public void RenderWatchlist(SKCanvas canvas, float width, float height)
-    {
-        float y = 10;
-        string[] symbols = { "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT" };
-        
-        using var itemPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
-        using var pricePaint = new SKPaint { Color = ThemeManager.TextPrimary, IsAntialias = true };
-
-        foreach(var sym in symbols)
-        {
-            canvas.DrawText(sym, 10, y, _itemFont, itemPaint);
-            canvas.DrawText("---", width - 60, y, _itemFont, pricePaint);
-            y += 25;
-            if (y > height - 10) break;
-        }
-    }
-
     public void RenderPositions(SKCanvas canvas, float width, float height)
     {
         RenderEmptyState(canvas, width, height, "No open positions");
@@ -154,11 +137,5 @@ public class SidebarRenderer
         
         float textWidth = TextMeasureCache.Instance.MeasureText(message, emptyFont);
         canvas.DrawText(message, (width - textWidth) / 2, height / 2, emptyFont, emptyPaint);
-    }
-
-    public void RenderRightSidebar(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
-    {
-        // Deprecated - use individual render methods instead
-        RenderTrades(canvas, width, height, trades);
     }
 }
