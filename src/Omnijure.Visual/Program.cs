@@ -75,11 +75,12 @@ public static class Program
         // Let's print env vars for debug if we crash again.
         
         var options = WindowOptions.Default;
-        options.Size = new Vector2D<int>(1920, 1080); // Ventana Full HD
-        options.Title = "Omnijure Trading Platform";
+        options.Size = new Vector2D<int>(1920, 1080);
+        options.Title = "Omnijure";
         options.VSync = true;
         options.FramesPerSecond = 144;
         options.UpdatesPerSecond = 144;
+        options.WindowBorder = WindowBorder.Hidden; // Custom titlebar
 
         _window = Window.Create(options);
 
@@ -121,6 +122,12 @@ public static class Program
         _renderer = new ChartRenderer();
         _layout = new LayoutManager();
         _toolbar = new ToolbarRenderer();
+        _toolbar.SetWindowActions(
+            onClose: () => _window.Close(),
+            onMinimize: () => _window.WindowState = WindowState.Minimized,
+            onMaximize: () => _window.WindowState = _window.WindowState == WindowState.Maximized 
+                ? WindowState.Normal : WindowState.Maximized
+        );
         _searchModalRenderer = new SearchModalRenderer();
         _buffer = new RingBuffer<Candle>(4096);
         _trades = new RingBuffer<MarketTrade>(1024);
@@ -521,6 +528,10 @@ public static class Program
                 return;
             }
             
+            // Window control buttons (close, maximize, minimize)
+            if (_toolbar.HandleMouseDown(_mousePos.X, _mousePos.Y))
+                return;
+            
             UiDropdown clickedDd = null;
             foreach(var dd in _uiDropdowns)
             {
@@ -846,6 +857,7 @@ public static class Program
 
         // 3. LAYOUT & VIEWPORT
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
+        _layout.UpdateChartTitle(_currentSymbol, _currentTimeframe, currentPrice);
         
         // Calculate visible candles based on actual chart width (subtracting right axis margin)
         float chartWidth = _layout.ChartRect.Width - 60; // Matches ChartRenderer.RightAxisWidth
@@ -896,7 +908,7 @@ public static class Program
         // ScrollOffset=0 is Latest Candle at Right Edge.
         
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades, _drawingState);
+        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades, _drawingState, _window.Size.X, _window.Size.Y);
         
         // Render Toolbar (Top)
         _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y);

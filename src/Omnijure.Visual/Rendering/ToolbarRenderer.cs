@@ -1,5 +1,7 @@
 
+
 using SkiaSharp;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -52,6 +54,35 @@ public class ToolbarRenderer
         _fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
     }
 
+    // Menu items for trading platform
+    private static readonly string[] MenuItems = ["Markets", "Charts", "Strategy", "Tools", "View"];
+    
+    // Window control state
+    private Action? _onClose;
+    private Action? _onMinimize;
+    private Action? _onMaximize;
+    private SKRect _closeButtonRect;
+    private SKRect _maximizeButtonRect;
+    private SKRect _minimizeButtonRect;
+    private SKRect _dragAreaRect;
+    private bool _isDraggingWindow;
+    private SKPoint _dragStart;
+
+    public void SetWindowActions(Action onClose, Action onMinimize, Action onMaximize)
+    {
+        _onClose = onClose;
+        _onMinimize = onMinimize;
+        _onMaximize = onMaximize;
+    }
+
+    public bool HandleMouseDown(float x, float y)
+    {
+        if (_closeButtonRect.Contains(x, y)) { _onClose?.Invoke(); return true; }
+        if (_maximizeButtonRect.Contains(x, y)) { _onMaximize?.Invoke(); return true; }
+        if (_minimizeButtonRect.Contains(x, y)) { _onMinimize?.Invoke(); return true; }
+        return false;
+    }
+
     public void Render(SKCanvas canvas, SKRect rect, UiSearchBox searchBox, List<UiDropdown> dropdowns, List<UiButton> buttons)
     {
         // Background with gradient
@@ -61,11 +92,38 @@ public class ToolbarRenderer
         var shadowRect = new SKRect(rect.Left, rect.Bottom - 2, rect.Right, rect.Bottom + 2);
         canvas.DrawRect(shadowRect, _shadowPaint);
         
-        float x = 15;
+        float x = 8;
         float y = rect.Top + 8;
         float itemH = 34;
         
-        // 1. Search Box (Left side)
+        // 0. Menu Items (izquierda, como IDE)
+        using var menuFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 12);
+        foreach (var menuItem in MenuItems)
+        {
+            float menuTextW = menuFont.MeasureText(menuItem);
+            float menuBtnW = menuTextW + 16;
+            var menuRect = new SKRect(x, y + 2, x + menuBtnW, y + itemH - 2);
+            
+            bool isHovered = menuRect.Contains(_lastMouseX, _lastMouseY);
+            if (isHovered)
+            {
+                canvas.DrawRoundRect(menuRect, 4, 4, _btnHover);
+            }
+            
+            using var menuPaint = new SKPaint 
+            { 
+                Color = isHovered ? ThemeManager.TextWhite : ThemeManager.TextSecondary, 
+                IsAntialias = true 
+            };
+            canvas.DrawText(menuItem, x + 8, menuRect.MidY + 4, menuFont, menuPaint);
+            x += menuBtnW + 2;
+        }
+        
+        // Separator after menu
+        canvas.DrawLine(x + 4, y + 5, x + 4, y + itemH - 5, new SKPaint { Color = ThemeManager.Border, StrokeWidth = 1 });
+        x += 16;
+        
+        // 1. Search Box
         if (searchBox != null)
         {
             var searchRect = new SKRect(x, y, x + 250, y + itemH);
@@ -206,7 +264,68 @@ public class ToolbarRenderer
             }
         }
         
-        // 5. Render Dropdown Lists (if open)
+        // 5. Window Controls (derecha, como IDE)
+        float btnW = 46;
+        float btnH = rect.Height;
+        float rightEdge = rect.Right;
+
+        // Close button (rojo al hover)
+        _closeButtonRect = new SKRect(rightEdge - btnW, rect.Top, rightEdge, rect.Top + btnH);
+        bool closeHover = _closeButtonRect.Contains(_lastMouseX, _lastMouseY);
+        if (closeHover)
+        {
+            using var closeBg = new SKPaint { Color = new SKColor(232, 17, 35), Style = SKPaintStyle.Fill };
+            canvas.DrawRect(_closeButtonRect, closeBg);
+        }
+        // X icon
+        {
+            float cx = _closeButtonRect.MidX, cy = _closeButtonRect.MidY;
+            using var xPaint = new SKPaint 
+            { 
+                Color = closeHover ? SKColors.White : ThemeManager.TextSecondary, 
+                StrokeWidth = 1.5f, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round 
+            };
+            canvas.DrawLine(cx - 5, cy - 5, cx + 5, cy + 5, xPaint);
+            canvas.DrawLine(cx + 5, cy - 5, cx - 5, cy + 5, xPaint);
+        }
+
+        // Maximize button
+        _maximizeButtonRect = new SKRect(rightEdge - btnW * 2, rect.Top, rightEdge - btnW, rect.Top + btnH);
+        bool maxHover = _maximizeButtonRect.Contains(_lastMouseX, _lastMouseY);
+        if (maxHover)
+        {
+            canvas.DrawRect(_maximizeButtonRect, _btnHover);
+        }
+        {
+            float cx = _maximizeButtonRect.MidX, cy = _maximizeButtonRect.MidY;
+            using var boxPaint = new SKPaint 
+            { 
+                Color = ThemeManager.TextSecondary, StrokeWidth = 1.5f, 
+                IsAntialias = true, Style = SKPaintStyle.Stroke 
+            };
+            canvas.DrawRect(cx - 5, cy - 4, 10, 9, boxPaint);
+        }
+
+        // Minimize button
+        _minimizeButtonRect = new SKRect(rightEdge - btnW * 3, rect.Top, rightEdge - btnW * 2, rect.Top + btnH);
+        bool minHover = _minimizeButtonRect.Contains(_lastMouseX, _lastMouseY);
+        if (minHover)
+        {
+            canvas.DrawRect(_minimizeButtonRect, _btnHover);
+        }
+        {
+            float cx = _minimizeButtonRect.MidX, cy = _minimizeButtonRect.MidY;
+            using var linePaint = new SKPaint 
+            { 
+                Color = ThemeManager.TextSecondary, StrokeWidth = 1.5f, IsAntialias = true 
+            };
+            canvas.DrawLine(cx - 5, cy, cx + 5, cy, linePaint);
+        }
+
+        // Drag area (entre contenido y botones de ventana)
+        _dragAreaRect = new SKRect(x, rect.Top, rightEdge - btnW * 3, rect.Bottom);
+        
+        // 6. Render Dropdown Lists (if open)
         if (dropdowns != null)
         {
             foreach (var dd in dropdowns)

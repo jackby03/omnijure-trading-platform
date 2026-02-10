@@ -45,7 +45,13 @@ public static class SvgIconRenderer
         Exchange,
         Star,
         Wallet,
-        Bell
+        Bell,
+
+        // Status Icons
+        Lightning,
+        Connection,
+        Dot,
+        Info
     }
 
     /// <summary>
@@ -156,6 +162,18 @@ public static class SvgIconRenderer
                 break;
             case Icon.Bell:
                 DrawBell(canvas, paint);
+                break;
+            case Icon.Lightning:
+                DrawLightning(canvas, fillPaint);
+                break;
+            case Icon.Connection:
+                DrawConnection(canvas, paint, fillPaint);
+                break;
+            case Icon.Dot:
+                DrawDot(canvas, fillPaint);
+                break;
+            case Icon.Info:
+                DrawInfo(canvas, paint, fillPaint);
                 break;
         }
 
@@ -476,5 +494,41 @@ public static class SvgIconRenderer
         
         // Bottom arc
         canvas.DrawLine(10, 19, 14, 19, paint);
+    }
+
+    private static void DrawLightning(SKCanvas canvas, SKPaint fillPaint)
+    {
+        // Lightning bolt
+        using var path = new SKPath();
+        path.MoveTo(13, 2);
+        path.LineTo(6, 13);
+        path.LineTo(11, 13);
+        path.LineTo(10, 22);
+        path.LineTo(18, 10);
+        path.LineTo(13, 10);
+        path.Close();
+        canvas.DrawPath(path, fillPaint);
+    }
+
+    private static void DrawConnection(SKCanvas canvas, SKPaint paint, SKPaint fillPaint)
+    {
+        // Two circles connected by a line (network/connection)
+        canvas.DrawCircle(7, 12, 4, paint);
+        canvas.DrawCircle(17, 12, 4, paint);
+        canvas.DrawLine(11, 12, 13, 12, paint);
+    }
+
+    private static void DrawDot(SKCanvas canvas, SKPaint fillPaint)
+    {
+        // Simple filled circle (status indicator)
+        canvas.DrawCircle(12, 12, 5, fillPaint);
+    }
+
+    private static void DrawInfo(SKCanvas canvas, SKPaint paint, SKPaint fillPaint)
+    {
+        // Circle with "i"
+        canvas.DrawCircle(12, 12, 9, paint);
+        canvas.DrawCircle(12, 7, 1.5f, fillPaint);
+        canvas.DrawLine(12, 11, 12, 18, paint);
     }
 }

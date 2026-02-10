@@ -30,6 +30,7 @@ public class PanelSystem
     private const float CollapsedWidth = 32f;
     private const float HandlePadding = 6f;
     private const float DragThreshold = 5f;
+    private const float PanelGap = 2f; // Margen entre paneles (como IDE)
 
     public IReadOnlyCollection<DockablePanel> Panels => _panels.Values;
 
@@ -54,37 +55,40 @@ public class PanelSystem
 
     public void Update(int screenWidth, int screenHeight, float headerHeight)
     {
+        float statusBarHeight = StatusBarRenderer.Height;
+        float availableBottom = screenHeight - statusBarHeight;
+        
         float currentLeftX = 0;
         float currentRightX = screenWidth;
-        float currentBottomY = screenHeight;
+        float currentBottomY = availableBottom;
 
         // ???????????????????????????????????????????????????????????
-        // PASO 1: Calcular Left panels (full height)
+        // PASO 1: Left panels (full height menos status bar)
         // ???????????????????????????????????????????????????????????
         foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Left && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
         {
             float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
-            panel.Bounds = new SKRect(currentLeftX, headerHeight, currentLeftX + width, screenHeight);
+            panel.Bounds = new SKRect(currentLeftX, headerHeight, currentLeftX + width - PanelGap, availableBottom);
             currentLeftX += width;
         }
 
         // ???????????????????????????????????????????????????????????
-        // PASO 2: Calcular Right panels (full height)
+        // PASO 2: Right panels (full height menos status bar)
         // ???????????????????????????????????????????????????????????
         foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Right && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
         {
             float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
-            panel.Bounds = new SKRect(currentRightX - width, headerHeight, currentRightX, screenHeight);
+            panel.Bounds = new SKRect(currentRightX - width + PanelGap, headerHeight, currentRightX, availableBottom);
             currentRightX -= width;
         }
 
         // ???????????????????????????????????????????????????????????
-        // PASO 3: Calcular Bottom panels (entre Left y Right)
+        // PASO 3: Bottom panels (entre Left y Right)
         // ???????????????????????????????????????????????????????????
         foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
         {
             float height = panel.IsCollapsed ? CollapsedWidth : panel.Height;
-            panel.Bounds = new SKRect(currentLeftX, currentBottomY - height, currentRightX, currentBottomY);
+            panel.Bounds = new SKRect(currentLeftX, currentBottomY - height + PanelGap, currentRightX, currentBottomY);
             currentBottomY -= height;
         }
 
@@ -150,31 +154,39 @@ public class PanelSystem
     {
         // ???????????????????????????????????????????????????????????
         // ORDEN DE RENDERIZADO (de abajo hacia arriba):
-        // 1. Paneles dockeados (base) - EXCEPTO Center (chart)
-        // 2. Paneles flotantes
-        // 3. Preview de dock zone (sobre todo)
-        // 4. Panel arrastrándose (capa superior)
+        // 1. Center panel chrome (bordes/título del chart)
+        // 2. Paneles dockeados (Left/Right/Bottom)
+        // 3. Paneles flotantes
+        // 4. Preview de dock zone
+        // 5. Panel arrastrándose
         // ???????????????????????????????????????????????????????????
         
-        // CAPA 1: Render docked panels (NO Center - ese se renderiza aparte)
+        // CAPA 1: Center panel chrome (bordes, título, handles del chart)
+        var centerPanel = _panels.Values.FirstOrDefault(p => p.Position == PanelPosition.Center && !p.IsClosed && p != _draggingPanel);
+        if (centerPanel != null)
+        {
+            RenderPanel(canvas, centerPanel);
+        }
+        
+        // CAPA 2: Docked panels (Left/Right/Bottom)
         foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel && !p.IsClosed && p.Position != PanelPosition.Center))
         {
             RenderPanel(canvas, panel);
         }
 
-        // CAPA 2: Render floating panels
+        // CAPA 3: Floating panels
         foreach (var panel in _panels.Values.Where(p => p.IsFloating && p != _draggingPanel && !p.IsClosed))
         {
             RenderPanel(canvas, panel);
         }
 
-        // CAPA 3: Render dock zone preview (SOBRE TODOS los paneles)
+        // CAPA 4: Dock zone preview (SOBRE TODOS)
         if (_draggingPanel != null && _currentDockZone != null)
         {
             RenderDockZonePreview(canvas, _currentDockZone);
         }
 
-        // CAPA 4: Render dragging panel ÚLTIMO (z-index más alto)
+        // CAPA 5: Dragging panel (z-index máximo)
         if (_draggingPanel != null)
         {
             RenderDraggingPanel(canvas, _draggingPanel);
@@ -265,21 +277,20 @@ public class PanelSystem
 
     private void RenderExpandedPanel(SKCanvas canvas, DockablePanel panel, SKPaint paint)
     {
-        // Icono SVG + Nombre del panel (esquina superior izquierda)
+        // Icono SVG + Nombre del panel
         float nameX = panel.Bounds.Left + 40;
         float nameY = panel.Bounds.Top + 22;
         
-        // Dibujar icono SVG
         SvgIconRenderer.DrawIcon(canvas, panel.Config.Icon, 
             panel.Bounds.Left + 10, panel.Bounds.Top + 8, 
             16, new SKColor(140, 145, 155));
         
-        // Panel name
         using var nameFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 11);
         paint.Color = new SKColor(140, 145, 155);
         paint.Style = SKPaintStyle.Fill;
         
-        string nameText = panel.Config.DisplayName.ToUpper();
+        // Usar DynamicTitle si existe, sino DisplayName
+        string nameText = panel.DynamicTitle ?? panel.Config.DisplayName.ToUpper();
         canvas.DrawText(nameText, nameX, nameY, nameFont, paint);
 
         // Drag handle (dots)
@@ -293,14 +304,14 @@ public class PanelSystem
                 _hoveredHandle == $"{panel.Config.Id}_collapse", panel.Position);
         }
 
-        // Close handle (X) - SIEMPRE visible si puede cerrarse
+        // Close handle (X)
         if (panel.Config.CanClose)
         {
             RenderHandle(canvas, panel.CloseHandleBounds, "close", 
                 _hoveredHandle == $"{panel.Config.Id}_close", panel.Position);
         }
 
-        // Subtle separator line
+        // Separator line
         paint.Color = new SKColor(30, 33, 38);
         paint.Style = SKPaintStyle.Stroke;
         paint.StrokeWidth = 1;
@@ -672,6 +683,9 @@ public class PanelSystem
 
     public SKRect GetChartArea(int screenWidth, int screenHeight, float headerHeight)
     {
+        float statusBarHeight = StatusBarRenderer.Height;
+        float availableBottom = screenHeight - statusBarHeight;
+        
         float leftMargin = 0;
         float rightMargin = 0;
         float bottomMargin = 0;
@@ -686,12 +700,21 @@ public class PanelSystem
             if (panel.Position == PanelPosition.Bottom) bottomMargin += height;
         }
 
-        return new SKRect(leftMargin, headerHeight, screenWidth - rightMargin, screenHeight - bottomMargin);
+        return new SKRect(leftMargin, headerHeight, screenWidth - rightMargin, availableBottom - bottomMargin);
     }
 
     public bool IsMouseOverPanel(float x, float y) => _panels.Values.Any(p => p.Bounds.Contains(x, y));
     public bool IsDraggingPanel => _draggingPanel != null;
     public DockablePanel? GetPanel(string panelId) => _panels.GetValueOrDefault(panelId);
+    
+    public void UpdateChartTitle(string symbol, string interval, float price)
+    {
+        var chart = GetPanel(PanelDefinitions.CHART);
+        if (chart != null)
+        {
+            chart.DynamicTitle = $"{symbol} \u2022 {interval} \u2022 {price:F2}";
+        }
+    }
 }
 
 /// <summary>
@@ -712,8 +735,13 @@ public class DockablePanel
     public float FloatingHeight { get; set; }
     public bool IsCollapsed { get; set; }
     public bool IsFloating { get; set; }
-    public bool IsClosed { get; set; }  // ? Panel cerrado (oculto completamente)
+    public bool IsClosed { get; set; }
     public int DockOrder { get; set; }
+    
+    /// <summary>
+    /// Título dinámico (ej: "BTCUSDT • 1m" para el chart)
+    /// </summary>
+    public string? DynamicTitle { get; set; }
 
     public DockablePanel(PanelConfig config)
     {
@@ -723,7 +751,7 @@ public class DockablePanel
         Height = config.DefaultHeight;
         IsCollapsed = false;
         IsFloating = false;
-        IsClosed = false;  // ? Inicialmente visible
+        IsClosed = false;
         DockOrder = 0;
     }
 }

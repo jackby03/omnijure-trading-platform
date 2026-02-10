@@ -21,6 +21,7 @@ public class LayoutManager
     // Renderers
     private readonly SidebarRenderer _sidebar;
     private readonly LeftToolbarRenderer _leftToolbar;
+    private readonly StatusBarRenderer _statusBar;
     
     // Legacy properties for backward compatibility
     public bool IsResizingLeft => false;
@@ -30,6 +31,7 @@ public class LayoutManager
     {
         _sidebar = new SidebarRenderer();
         _leftToolbar = new LeftToolbarRenderer();
+        _statusBar = new StatusBarRenderer();
         _panelSystem = new PanelSystem();
     }
     
@@ -70,10 +72,17 @@ public class LayoutManager
 
     public Omnijure.Visual.Drawing.DrawingTool? HandleToolbarClick(float x, float y)
     {
-        if (LeftToolbarRect.Contains(x, y))
+        // El toolbar está dentro del ContentBounds del chart panel
+        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        if (chartPanel == null || chartPanel.IsClosed) return null;
+        
+        var contentArea = chartPanel.ContentBounds;
+        var toolbarRect = new SKRect(contentArea.Left, contentArea.Top, 
+            contentArea.Left + LeftToolbarRenderer.ToolbarWidth, contentArea.Bottom);
+        
+        if (toolbarRect.Contains(x, y))
         {
-            float localY = y - LeftToolbarRect.Top;
-            // Calculate which button was clicked
+            float localY = y - contentArea.Top;
             float buttonY = 8;
             const float ButtonSize = 44;
             const float ButtonSpacing = 4;
@@ -101,45 +110,56 @@ public class LayoutManager
         string decision, int scrollOffset, float zoom, string symbol, string interval, 
         ChartType chartType, System.Collections.Generic.List<UiButton> buttons, 
         float minPrice, float maxPrice, Vector2D<float> mousePos, OrderBook orderBook, 
-        RingBuffer<MarketTrade> trades, Omnijure.Visual.Drawing.DrawingToolState? drawingState)
+        RingBuffer<MarketTrade> trades, Omnijure.Visual.Drawing.DrawingToolState? drawingState,
+        int screenWidth, int screenHeight)
     {
         // ???????????????????????????????????????????????????????????
-        // ORDEN DE RENDERIZADO (como tiling window manager / IDE):
-        //   CAPA 0: Chart (fondo, se pinta PRIMERO)
-        //   CAPA 1: Panel backgrounds + handles (sobre chart)
-        //   CAPA 2: Panel content (dentro de cada panel)
-        //   CAPA 3: Dock zone preview (sobre todo)
-        //   CAPA 4: Panel arrastrándose (capa superior)
+        // ORDEN DE RENDERIZADO (tiling window manager / IDE):
+        //   CAPA 0: Todos los panel backgrounds + chrome (incluyendo chart)
+        //   CAPA 1: Chart content DENTRO del panel (sobre su fondo)
+        //   CAPA 2: Panel content (sidebars, sobre todo)
+        //   CAPA 3: Dock zone preview + dragging panel
+        //   CAPA 4: Status bar
         // ???????????????????????????????????????????????????????????
 
-        // CAPA 0: Render Chart PRIMERO (fondo, por debajo de todo)
+        // CAPA 0: Panel backgrounds + chrome (TODOS, incluyendo center/chart)
+        _panelSystem.Render(canvas);
+
+        // CAPA 1: Chart content DENTRO del panel ya dibujado
         var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
         bool hasChart = chartPanel != null && !chartPanel.IsClosed;
 
         if (hasChart)
         {
-            canvas.Save();
-            canvas.ClipRect(ChartRect); // Clip en coordenadas absolutas
-            canvas.Translate(ChartRect.Left, ChartRect.Top);
+            // Usar ContentBounds del panel (ya excluye el header del panel)
+            var contentArea = chartPanel.ContentBounds;
             
-            // Toolbar interno
-            var toolbarMousePos = new Vector2D<float>(mousePos.X - ChartRect.Left, mousePos.Y - ChartRect.Top);
-            _leftToolbar.Render(canvas, ChartRect.Height,
+            canvas.Save();
+            canvas.ClipRect(contentArea);
+            canvas.Translate(contentArea.Left, contentArea.Top);
+            
+            // Toolbar dentro del chart
+            var toolbarMousePos = new Vector2D<float>(
+                mousePos.X - contentArea.Left, mousePos.Y - contentArea.Top);
+            _leftToolbar.Render(canvas, contentArea.Height,
                 drawingState?.ActiveTool ?? Omnijure.Visual.Drawing.DrawingTool.None, 
                 toolbarMousePos.X, toolbarMousePos.Y);
             
             // Chart (offset por toolbar)
             canvas.Save();
             canvas.Translate(LeftToolbarRenderer.ToolbarWidth, 0);
-            canvas.ClipRect(new SKRect(0, 0, ChartRect.Width - LeftToolbarRenderer.ToolbarWidth, ChartRect.Height));
+            canvas.ClipRect(new SKRect(0, 0, 
+                contentArea.Width - LeftToolbarRenderer.ToolbarWidth, contentArea.Height));
             
             var chartMousePos = new Vector2D<float>(
-                mousePos.X - ChartRect.Left - LeftToolbarRenderer.ToolbarWidth, 
-                mousePos.Y - ChartRect.Top);
+                mousePos.X - contentArea.Left - LeftToolbarRenderer.ToolbarWidth, 
+                mousePos.Y - contentArea.Top);
             
-            chartRenderer.Render(canvas, (int)(ChartRect.Width - LeftToolbarRenderer.ToolbarWidth), (int)ChartRect.Height, 
-                buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, 
-                chartMousePos, drawingState);
+            chartRenderer.Render(canvas, 
+                (int)(contentArea.Width - LeftToolbarRenderer.ToolbarWidth), 
+                (int)contentArea.Height, 
+                buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, 
+                minPrice, maxPrice, chartMousePos, drawingState);
             
             canvas.Restore();
             canvas.Restore();
@@ -149,9 +169,18 @@ public class LayoutManager
             RenderEmptyState(canvas, ChartRect);
         }
 
-        // CAPA 1+2: Render panels y su contenido (SOBRE el chart)
-        _panelSystem.Render(canvas);
+        // CAPA 2: Sidebar panel content (SOBRE el chart)
         RenderPanelContent(canvas, orderBook, trades, buffer);
+
+        // CAPA 4: Status bar
+        _statusBar.Render(canvas, screenWidth, screenHeight);
+    }
+    
+    public void UpdateFps(int fps) => _statusBar.UpdateFps(fps);
+    
+    public void UpdateChartTitle(string symbol, string interval, float price)
+    {
+        _panelSystem.UpdateChartTitle(symbol, interval, price);
     }
 
     private void RenderEmptyState(SKCanvas canvas, SKRect area)
