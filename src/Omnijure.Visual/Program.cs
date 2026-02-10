@@ -96,7 +96,10 @@ public static class Program
         // 0. Input Setup
         var input = _window.CreateInput();
         foreach (var keyboard in input.Keyboards)
+        {
             keyboard.KeyDown += OnKeyDown;
+            keyboard.KeyChar += OnKeyChar;
+        }
         
         foreach (var mouse in input.Mice)
         {
@@ -179,13 +182,18 @@ public static class Program
         _assetDropdown = new UiDropdown(10, 5, 180, 30, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
         _uiDropdowns.Add(_assetDropdown);
 
-        // Fetch full list in background
+        // Fetch full list in background and preload crypto icons
         Task.Run(async () => {
             var fullList = await Omnijure.Core.Network.BinanceService.GetAllUsdtSymbolsAsync();
             if (fullList != null && fullList.Count > 0)
             {
                 _assetDropdown.Items = fullList;
                 _searchModal?.SetSymbols(fullList);
+
+                // Preload icons for the most popular cryptos
+                Omnijure.Visual.Rendering.CryptoIconProvider.PreloadIcons(
+                    fullList.Take(30)
+                );
             }
         });
 
@@ -219,7 +227,7 @@ public static class Program
         {
             // Stop processing if it's a control character we don't handle here
             if (char.IsControl(arg2)) return;
-            
+
             _searchModal.AddChar(arg2);
             return;
         }
@@ -364,6 +372,11 @@ public static class Program
         _autoScaleY = true;
         _viewMinY = 0;
         _viewMaxY = 0;
+
+        // Clear all drawings when switching symbols
+        _drawingState.Objects.Clear();
+        _drawingState.CurrentDrawing = null;
+        _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
 
         // Update Title
         _window.Title = $"Omnijure - {symbol} [{interval}]";

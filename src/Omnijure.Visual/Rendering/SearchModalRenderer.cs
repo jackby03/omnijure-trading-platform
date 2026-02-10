@@ -138,8 +138,8 @@ public class SearchModalRenderer
         canvas.DrawRoundRect(searchRect, 6, 6, _searchBoxBg);
         canvas.DrawRoundRect(searchRect, 6, 6, _searchBoxBorder);
         
-        // Search icon
-        canvas.DrawText("🔍", searchRect.Left + 14, searchRect.MidY + 6, _font, _textPaintDim);
+        // Search icon (SVG for better quality)
+        SvgIconRenderer.DrawIcon(canvas, SvgIconRenderer.Icon.Search, searchRect.Left + 14, searchRect.Top + 12, 20, ThemeManager.TextMuted);
         
         // Search text or placeholder
         string displayText = string.IsNullOrEmpty(modal.SearchText) ? "Type to search..." : modal.SearchText;
@@ -238,11 +238,17 @@ public class SearchModalRenderer
                     canvas.DrawRoundRect(itemRect, 4, 4, _selectedBg);
                 }
                 
-                // Symbol (left, bold)
-                canvas.DrawText(result.Symbol, itemRect.Left + 12, itemRect.MidY + 2, _fontBold, _textPaintLarge);
+                // Crypto icon (left side)
+                float iconSize = 24;
+                float iconX = itemRect.Left + 12;
+                float iconY = itemRect.Top + (itemHeight - iconSize) / 2 - 4;
+                CryptoIconProvider.DrawCryptoIcon(canvas, result.Symbol, iconX, iconY, iconSize);
+
+                // Symbol (after icon, bold)
+                canvas.DrawText(result.Symbol, itemRect.Left + 44, itemRect.MidY + 2, _fontBold, _textPaintLarge);
                 
                 // Exchange display - pills like TradingView
-                float exchangeX = itemRect.Left + 12;
+                float exchangeX = itemRect.Left + 44;
                 float exchangeY = itemRect.MidY + 16;
                 
                 foreach (var exch in result.Exchanges)
@@ -267,16 +273,40 @@ public class SearchModalRenderer
                     float priceWidth = _font.MeasureText(priceText);
                     canvas.DrawText(priceText, itemRect.Right - 12 - priceWidth, itemRect.MidY - 6, _font, _textPaint);
                     
-                    // Change %
-                    string arrow = result.PercentChange >= 0 ? "▲" : "▼";
-                    string changeText = $"{arrow} {Math.Abs(result.PercentChange):F2}%";
+                    // Change % with vector arrow
+                    SKColor changeColor = result.PercentChange >= 0
+                        ? ThemeManager.BullishGreen
+                        : ThemeManager.BearishRed;
+
+                    string changeText = $"{Math.Abs(result.PercentChange):F2}%";
                     float changeWidth = _fontSmall.MeasureText(changeText);
-                    using var changePaint = new SKPaint 
-                    { 
-                        Color = result.PercentChange >= 0 ? new SKColor(14, 203, 129) : new SKColor(246, 70, 93),
-                        IsAntialias = true 
-                    };
-                    canvas.DrawText(changeText, itemRect.Right - 12 - changeWidth, itemRect.MidY + 14, _fontSmall, changePaint);
+
+                    float changeRightX = itemRect.Right - 12;
+                    float changeTextX = changeRightX - changeWidth;
+                    float changeTextY = itemRect.MidY + 14;
+
+                    // Draw arrow triangle
+                    float arrowX = changeTextX - 12;
+                    float arrowY = changeTextY - 4;
+                    using var arrowPath = new SKPath();
+                    if (result.PercentChange >= 0)
+                    {
+                        arrowPath.MoveTo(arrowX, arrowY + 6);
+                        arrowPath.LineTo(arrowX + 4, arrowY);
+                        arrowPath.LineTo(arrowX + 8, arrowY + 6);
+                    }
+                    else
+                    {
+                        arrowPath.MoveTo(arrowX, arrowY);
+                        arrowPath.LineTo(arrowX + 4, arrowY + 6);
+                        arrowPath.LineTo(arrowX + 8, arrowY);
+                    }
+                    arrowPath.Close();
+                    using var arrowPaint = new SKPaint { Color = changeColor, Style = SKPaintStyle.Fill, IsAntialias = true };
+                    canvas.DrawPath(arrowPath, arrowPaint);
+
+                    using var changePaint = new SKPaint { Color = changeColor, IsAntialias = true };
+                    canvas.DrawText(changeText, changeTextX, changeTextY, _fontSmall, changePaint);
                 }
                 
                 y += itemHeight + 2;

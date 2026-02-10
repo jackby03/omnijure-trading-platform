@@ -74,9 +74,8 @@ public class ToolbarRenderer
             // Draw search box background
             canvas.DrawRoundRect(searchRect, 6, 6, searchBox.IsFocused ? _searchBoxFocused : _searchBoxBg);
             
-            // Search icon
-            using var iconPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
-            canvas.DrawText("🔍", searchRect.Left + 10, searchRect.MidY + 5, _font, iconPaint);
+            // Search icon (SVG for crisp rendering)
+            SvgIconRenderer.DrawIcon(canvas, SvgIconRenderer.Icon.Search, searchRect.Left + 10, searchRect.Top + 7, 20, ThemeManager.TextSecondary);
             
             // Text or placeholder
             string displayText = string.IsNullOrEmpty(searchBox.Text) ? searchBox.Placeholder : searchBox.Text;
@@ -97,8 +96,12 @@ public class ToolbarRenderer
             if (!string.IsNullOrEmpty(searchBox.Text))
             {
                 var clearRect = new SKRect(searchRect.Right - 30, searchRect.Top + 7, searchRect.Right - 7, searchRect.Bottom - 7);
-                canvas.DrawCircle(clearRect.MidX, clearRect.MidY, 10, new SKPaint { Color = ThemeManager.Border, Style = SKPaintStyle.Fill });
-                canvas.DrawText("×", clearRect.MidX - 4, clearRect.MidY + 5, _font, _textPaint);
+                using var circlePaint = new SKPaint { Color = ThemeManager.Border, Style = SKPaintStyle.Fill };
+                canvas.DrawCircle(clearRect.MidX, clearRect.MidY, 10, circlePaint);
+                // Draw X
+                using var xPaint = new SKPaint { Color = ThemeManager.TextPrimary, StrokeWidth = 2, IsAntialias = true };
+                canvas.DrawLine(clearRect.MidX - 4, clearRect.MidY - 4, clearRect.MidX + 4, clearRect.MidY + 4, xPaint);
+                canvas.DrawLine(clearRect.MidX + 4, clearRect.MidY - 4, clearRect.MidX - 4, clearRect.MidY + 4, xPaint);
             }
             
             x += 265;
@@ -110,6 +113,10 @@ public class ToolbarRenderer
             var assetDd = dropdowns.FirstOrDefault(d => d.Label == "Asset");
             if (assetDd != null)
             {
+                // Crypto icon before asset name
+                CryptoIconProvider.DrawCryptoIcon(canvas, assetDd.SelectedItem, x, y + 2, 24);
+                x += 30;
+
                 // Asset name (large and bold)
                 canvas.DrawText(assetDd.SelectedItem, x, y + 12, _fontLarge, _textPaintLarge);
                 float assetW = _fontLarge.MeasureText(assetDd.SelectedItem);
@@ -123,14 +130,32 @@ public class ToolbarRenderer
                     float priceW = _font.MeasureText(priceText);
                     x += priceW + 10;
                     
-                    // Change % with color and arrow
-                    string arrow = assetDd.PercentChange >= 0 ? "▲" : "▼";
-                    string changeText = $"{arrow} {Math.Abs(assetDd.PercentChange):F2}%";
-                    using var changePaint = new SKPaint 
-                    { 
-                        Color = assetDd.PercentChange >= 0 ? ThemeManager.Success : ThemeManager.Error,
-                        IsAntialias = true 
-                    };
+                    // Change % with vector arrow
+                    SKColor changeColor = assetDd.PercentChange >= 0 ? ThemeManager.Success : ThemeManager.Error;
+
+                    // Draw arrow triangle
+                    using var arrowPath2 = new SKPath();
+                    float ax = x;
+                    float ay = y + 7;
+                    if (assetDd.PercentChange >= 0)
+                    {
+                        arrowPath2.MoveTo(ax, ay + 6);
+                        arrowPath2.LineTo(ax + 4, ay);
+                        arrowPath2.LineTo(ax + 8, ay + 6);
+                    }
+                    else
+                    {
+                        arrowPath2.MoveTo(ax, ay);
+                        arrowPath2.LineTo(ax + 4, ay + 6);
+                        arrowPath2.LineTo(ax + 8, ay);
+                    }
+                    arrowPath2.Close();
+                    using var arrowFill = new SKPaint { Color = changeColor, Style = SKPaintStyle.Fill, IsAntialias = true };
+                    canvas.DrawPath(arrowPath2, arrowFill);
+                    x += 12;
+
+                    string changeText = $"{Math.Abs(assetDd.PercentChange):F2}%";
+                    using var changePaint = new SKPaint { Color = changeColor, IsAntialias = true };
                     canvas.DrawText(changeText, x, y + 11, _font, changePaint);
                     x += _font.MeasureText(changeText) + 20;
                 }
@@ -152,7 +177,16 @@ public class ToolbarRenderer
                 
                 string text = $"{intervalDd.Label}: {intervalDd.SelectedItem}";
                 canvas.DrawText(text, intervalDd.Rect.Left + 10, intervalDd.Rect.MidY + 5, _font, _textPaint);
-                canvas.DrawText("▼", intervalDd.Rect.Right - 20, intervalDd.Rect.MidY + 5, _fontSmall, _textPaint);
+
+                // Down arrow icon
+                using var arrowPath = new SKPath();
+                float arrowX = intervalDd.Rect.Right - 15;
+                float arrowY = intervalDd.Rect.MidY;
+                arrowPath.MoveTo(arrowX - 4, arrowY - 2);
+                arrowPath.LineTo(arrowX, arrowY + 2);
+                arrowPath.LineTo(arrowX + 4, arrowY - 2);
+                using var arrowPaint = new SKPaint { Color = ThemeManager.TextSecondary, Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true, StrokeCap = SKStrokeCap.Round };
+                canvas.DrawPath(arrowPath, arrowPaint);
                 
                 x += 115;
             }
