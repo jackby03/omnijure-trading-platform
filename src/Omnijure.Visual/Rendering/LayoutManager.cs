@@ -1,39 +1,36 @@
 using SkiaSharp;
-using Silk.NET.Input;
 using Silk.NET.Maths;
+using Omnijure.Core.DataStructures;
+using System.Linq;
 
 namespace Omnijure.Visual.Rendering;
 
 public class LayoutManager
 {
     // Layout Config
-    public float HeaderHeight { get; private set; } = 40;
-    public float LeftSidebarWidth { get; private set; } = 250;
-    public float RightSidebarWidth { get; private set; } = 300;
-    private const float MinSidebarWidth = 100;
-    private const float DividerWidth = 6;
+    public float HeaderHeight { get; private set; } = 50;
+    
+    // NEW: Panel System sin barras de título
+    private readonly PanelSystem _panelSystem;
 
     // Bounds
     public SKRect HeaderRect { get; private set; }
-    public SKRect LeftSidebarRect { get; private set; }
-    public SKRect LeftToolbarRect { get; private set; }  // Drawing tools toolbar
+    public SKRect LeftToolbarRect { get; private set; }
     public SKRect ChartRect { get; private set; }
-    public SKRect RightSidebarRect { get; private set; }
-    public SKRect DividerLeftRect { get; private set; }
-    public SKRect DividerRightRect { get; private set; }
-
-    // State
-    public bool IsResizingLeft { get; private set; }
-    public bool IsResizingRight { get; private set; }
 
     // Renderers
     private readonly SidebarRenderer _sidebar;
     private readonly LeftToolbarRenderer _leftToolbar;
     
+    // Legacy properties for backward compatibility
+    public bool IsResizingLeft => false;
+    public bool IsResizingRight => false;
+    
     public LayoutManager()
     {
         _sidebar = new SidebarRenderer();
         _leftToolbar = new LeftToolbarRenderer();
+        _panelSystem = new PanelSystem();
     }
     
     public void UpdateLayout(int width, int height)
@@ -41,133 +38,204 @@ public class LayoutManager
         // 0. Header
         HeaderRect = new SKRect(0, 0, width, HeaderHeight);
 
-        // Clamp Sidebar widths
-        if (LeftSidebarWidth < MinSidebarWidth) LeftSidebarWidth = MinSidebarWidth;
-        if (RightSidebarWidth < MinSidebarWidth) RightSidebarWidth = MinSidebarWidth;
-        
-        float panelH = height - HeaderHeight;
-        float remainingW = width - (DividerWidth * 2);
-        
-        if (LeftSidebarWidth + RightSidebarWidth > remainingW - 200)
-        {
-             // Adjust if chart gets too small
-             float ratio = LeftSidebarWidth / (LeftSidebarWidth + RightSidebarWidth);
-             float totalSidebars = remainingW - 200;
-             LeftSidebarWidth = totalSidebars * ratio;
-             RightSidebarWidth = totalSidebars * (1 - ratio);
-        }
+        // 1. Update panel system (calcula posiciones de paneles)
+        _panelSystem.Update(width, height, HeaderHeight);
 
-        // 1. Left Sidebar
-        LeftSidebarRect = new SKRect(0, HeaderHeight, LeftSidebarWidth, height);
-        
-        // 2. Left Divider
-        DividerLeftRect = new SKRect(LeftSidebarWidth, HeaderHeight, LeftSidebarWidth + DividerWidth, height);
-        
-        // 3. Right Sidebar
-        RightSidebarRect = new SKRect(width - RightSidebarWidth, HeaderHeight, width, height);
-        
-        // 4. Right Divider
-        DividerRightRect = new SKRect(width - RightSidebarWidth - DividerWidth, HeaderHeight, width - RightSidebarWidth, height);
+        // 2. Get chart area (área no ocupada por paneles dockeados)
+        var chartArea = _panelSystem.GetChartArea(width, height, HeaderHeight);
 
-        // 5. Left Toolbar (Drawing Tools) - Inside chart area
-        float chartStartX = LeftSidebarWidth + DividerWidth;
-        LeftToolbarRect = new SKRect(chartStartX, HeaderHeight, chartStartX + LeftToolbarRenderer.ToolbarWidth, height);
-
-        // 6. Center Chart (adjusted for left toolbar)
-        ChartRect = new SKRect(chartStartX + LeftToolbarRenderer.ToolbarWidth, HeaderHeight, width - RightSidebarWidth - DividerWidth, height);
+        // 3. Chart completo (incluye toolbar interno)
+        ChartRect = new SKRect(chartArea.Left, HeaderHeight, chartArea.Right, chartArea.Bottom);
+        
+        // 4. Left Toolbar DENTRO del chart (para referencia, pero se renderiza dentro del chart)
+        // CRUCIAL: Usa chartArea.Bottom NO height para respetar panel Positions
+        LeftToolbarRect = new SKRect(chartArea.Left, HeaderHeight, 
+            chartArea.Left + LeftToolbarRenderer.ToolbarWidth, chartArea.Bottom);
     }
     
     public void HandleMouseDown(float x, float y)
     {
-        if (DividerLeftRect.Contains(x, y)) IsResizingLeft = true;
-        else if (DividerRightRect.Contains(x, y)) IsResizingRight = true;
+        _panelSystem.OnMouseDown(x, y);
     }
     
     public void HandleMouseUp()
     {
-        IsResizingLeft = false;
-        IsResizingRight = false;
+        _panelSystem.OnMouseUp(0, 0, 0, 0);
     }
     
-    public void HandleMouseMove(float x, float y, float deltaX)
+    public void HandleMouseMove(float x, float y, float deltaX, int screenWidth, int screenHeight)
     {
-        if (IsResizingLeft)
-        {
-            LeftSidebarWidth += deltaX;
-        }
-        else if (IsResizingRight)
-        {
-            RightSidebarWidth -= deltaX;
-        }
+        _panelSystem.OnMouseMove(x, y, screenWidth, screenHeight, HeaderHeight);
     }
-    
-    public bool IsMouseOverDivider(float x, float y) => DividerLeftRect.Contains(x,y) || DividerRightRect.Contains(x,y);
 
-    /// <summary>
-    /// Handles clicks on the left toolbar for tool selection
-    /// </summary>
     public Omnijure.Visual.Drawing.DrawingTool? HandleToolbarClick(float x, float y)
     {
         if (LeftToolbarRect.Contains(x, y))
         {
-            float localX = x - LeftToolbarRect.Left;
             float localY = y - LeftToolbarRect.Top;
-            return _leftToolbar.GetToolAtPosition(localX, localY);
+            // Calculate which button was clicked
+            float buttonY = 8;
+            const float ButtonSize = 44;
+            const float ButtonSpacing = 4;
+            
+            var tools = new[] 
+            {
+                Omnijure.Visual.Drawing.DrawingTool.None,
+                Omnijure.Visual.Drawing.DrawingTool.TrendLine,
+                Omnijure.Visual.Drawing.DrawingTool.HorizontalLine
+            };
+            
+            for (int i = 0; i < tools.Length; i++)
+            {
+                if (localY >= buttonY && localY <= buttonY + ButtonSize)
+                {
+                    return tools[i];
+                }
+                buttonY += ButtonSize + ButtonSpacing;
+            }
         }
         return null;
     }
 
-    /// <summary>
-    /// Checks if mouse is over the left toolbar
-    /// </summary>
-    public bool IsMouseOverToolbar(float x, float y) => LeftToolbarRect.Contains(x, y);
-    
-    public void Render(SKCanvas canvas, ChartRenderer renderer,
-        Omnijure.Core.DataStructures.RingBuffer<Omnijure.Core.DataStructures.Candle> buffer,
-        string decision, int scrollOffset, float zoom,
-        string symbol, string interval, ChartType chartType,
-        System.Collections.Generic.List<UiButton> buttons,
-        float minPrice, float maxPrice, Vector2D<float> mousePos,
-        Omnijure.Core.DataStructures.OrderBook orderBook,
-        Omnijure.Core.DataStructures.RingBuffer<Omnijure.Core.DataStructures.MarketTrade> trades,
-        Omnijure.Visual.Drawing.DrawingToolState drawingState)
+    public void Render(SKCanvas canvas, ChartRenderer chartRenderer, RingBuffer<Candle> buffer, 
+        string decision, int scrollOffset, float zoom, string symbol, string interval, 
+        ChartType chartType, System.Collections.Generic.List<UiButton> buttons, 
+        float minPrice, float maxPrice, Vector2D<float> mousePos, OrderBook orderBook, 
+        RingBuffer<MarketTrade> trades, Omnijure.Visual.Drawing.DrawingToolState? drawingState)
     {
-        using var divPaint = new SKPaint { Color = new SKColor(30,30,30), Style = SKPaintStyle.Fill };
-        using var activeDivPaint = new SKPaint { Color = SKColors.Blue, Style = SKPaintStyle.Fill };
+        // 1. Render panel system (sidebars con drag & drop)
+        _panelSystem.Render(canvas);
 
-        // 1. Draw Dividers
-        canvas.DrawRect(DividerLeftRect, IsResizingLeft ? activeDivPaint : divPaint);
-        canvas.DrawRect(DividerRightRect, IsResizingRight ? activeDivPaint : divPaint);
-        
-        // 2. Draw Left Sidebar (Order Book)
-        canvas.Save();
-        canvas.ClipRect(LeftSidebarRect);
-        canvas.Translate(LeftSidebarRect.Left, LeftSidebarRect.Top);
-        _sidebar.RenderOrderBook(canvas, LeftSidebarRect.Width, LeftSidebarRect.Height, orderBook);
-        canvas.Restore();
+        // 2. Render panel content
+        RenderPanelContent(canvas, orderBook, trades, buffer);
 
-        // 3. Draw Right Sidebar (Watchlist & Trades)
+        // 3. Render Chart Panel completo (toolbar + chart, todo clipeado)
         canvas.Save();
-        canvas.ClipRect(RightSidebarRect);
-        canvas.Translate(RightSidebarRect.Left, RightSidebarRect.Top);
-        _sidebar.RenderRightSidebar(canvas, RightSidebarRect.Width, RightSidebarRect.Height, trades);
-        canvas.Restore();
-
-        // 4. Draw Left Toolbar (Drawing Tools)
-        canvas.Save();
-        canvas.ClipRect(LeftToolbarRect);
-        canvas.Translate(LeftToolbarRect.Left, LeftToolbarRect.Top);
-        var toolbarLocalMouse = new Vector2D<float>(mousePos.X - LeftToolbarRect.Left, mousePos.Y - LeftToolbarRect.Top);
-        _leftToolbar.Render(canvas, LeftToolbarRect.Height, drawingState.ActiveTool, toolbarLocalMouse.X, toolbarLocalMouse.Y);
-        canvas.Restore();
-
-        // 5. Draw Chart
-        canvas.Save();
-        canvas.ClipRect(ChartRect);
         canvas.Translate(ChartRect.Left, ChartRect.Top);
-        // Correcting mousePos: ChartRenderer expects local mouse coordinates
-        var localMouse = new Vector2D<float>(mousePos.X - ChartRect.Left, mousePos.Y - HeaderHeight);
-        renderer.Render(canvas, (int)ChartRect.Width, (int)ChartRect.Height, buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, localMouse, drawingState);
-        canvas.Restore();
+        canvas.ClipRect(new SKRect(0, 0, ChartRect.Width, ChartRect.Height)); // CLIP del chart panel
+        
+        // 3a. Render left toolbar DENTRO del chart panel
+        var toolbarMousePos = new Vector2D<float>(mousePos.X - ChartRect.Left, mousePos.Y - ChartRect.Top);
+        _leftToolbar.Render(canvas, ChartRect.Height, // Usar ChartRect.Height
+            drawingState?.ActiveTool ?? Omnijure.Visual.Drawing.DrawingTool.None, 
+            toolbarMousePos.X, toolbarMousePos.Y);
+        
+        // 3b. Render main chart (offset por el toolbar)
+        canvas.Save();
+        canvas.Translate(LeftToolbarRenderer.ToolbarWidth, 0); // Offset para toolbar
+        canvas.ClipRect(new SKRect(0, 0, ChartRect.Width - LeftToolbarRenderer.ToolbarWidth, ChartRect.Height));
+        
+        // Adjust mouse position (después del toolbar)
+        var chartMousePos = new Vector2D<float>(
+            mousePos.X - ChartRect.Left - LeftToolbarRenderer.ToolbarWidth, 
+            mousePos.Y - ChartRect.Top);
+        
+        chartRenderer.Render(canvas, (int)(ChartRect.Width - LeftToolbarRenderer.ToolbarWidth), (int)ChartRect.Height, 
+            buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, 
+            chartMousePos, drawingState);
+        
+        canvas.Restore(); // Fin chart interno
+        canvas.Restore(); // Fin chart panel
     }
+
+    private void RenderPanelContent(SKCanvas canvas, OrderBook orderBook, RingBuffer<MarketTrade> trades, RingBuffer<Candle> buffer)
+    {
+        foreach (var panel in _panelSystem.Panels)
+        {
+            if (panel.IsCollapsed) continue;
+
+            canvas.Save();
+            canvas.ClipRect(panel.ContentBounds);
+            canvas.Translate(panel.ContentBounds.Left, panel.ContentBounds.Top);
+
+            var contentWidth = panel.ContentBounds.Width;
+            var contentHeight = panel.ContentBounds.Height;
+
+            // Renderizar contenido según el ID del panel
+            switch (panel.Config.Id)
+            {
+                case PanelDefinitions.WATCHLIST:
+                    _sidebar.RenderWatchlist(canvas, contentWidth, contentHeight);
+                    break;
+                    
+                case PanelDefinitions.ORDERBOOK:
+                    _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, orderBook);
+                    break;
+                    
+                case PanelDefinitions.TRADES:
+                    _sidebar.RenderTrades(canvas, contentWidth, contentHeight, trades);
+                    break;
+                    
+                case PanelDefinitions.POSITIONS:
+                    _sidebar.RenderPositions(canvas, contentWidth, contentHeight);
+                    break;
+                    
+                case PanelDefinitions.INDICATORS:
+                    RenderIndicatorsPanel(canvas, contentWidth, contentHeight);
+                    break;
+                    
+                case PanelDefinitions.DRAWINGS:
+                    RenderDrawingsPanel(canvas, contentWidth, contentHeight);
+                    break;
+                    
+                case PanelDefinitions.ALERTS:
+                    RenderAlertsPanel(canvas, contentWidth, contentHeight);
+                    break;
+            }
+
+            canvas.Restore();
+        }
+    }
+
+    private void RenderIndicatorsPanel(SKCanvas canvas, float width, float height)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            paint.Color = new SKColor(160, 165, 175);
+            canvas.DrawText("RSI, MACD, EMA coming soon...", 10, 30, font, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private void RenderDrawingsPanel(SKCanvas canvas, float width, float height)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            paint.Color = new SKColor(160, 165, 175);
+            canvas.DrawText("Drawing tools panel", 10, 30, font, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private void RenderAlertsPanel(SKCanvas canvas, float width, float height)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            paint.Color = new SKColor(160, 165, 175);
+            canvas.DrawText("No active alerts", 10, 30, font, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    public bool IsMouseOverPanel(float x, float y)
+    {
+        return _panelSystem.IsMouseOverPanel(x, y);
+    }
+
+    public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
 }

@@ -35,16 +35,18 @@ public class SidebarRenderer
 
     public void RenderOrderBook(SKCanvas canvas, float width, float height, OrderBook orderBook)
     {
-        canvas.DrawRect(0, 0, width, height, _bgPaint);
-        canvas.DrawText("ORDER BOOK", 10, 25, _headerFont, _headerTextPaint);
-        canvas.DrawLine(0, 35, width, 35, _linePaint);
+        // Ya no dibujamos fondo ni header - el panel lo maneja
         
-        if (orderBook == null) return;
+        if (orderBook == null) 
+        {
+            RenderEmptyState(canvas, width, height, "No order book data");
+            return;
+        }
 
         lock(orderBook)
         {
             float rowH = 18;
-            float startY = 50;
+            float startY = 10;
             
             var asks = orderBook.Asks.Take(20).ToList();
             var bids = orderBook.Bids.Take(20).ToList();
@@ -55,8 +57,8 @@ public class SidebarRenderer
             if (maxQty == 0) maxQty = 1;
 
             float y = startY;
-            // Asks (Reverse so highest price is top of the list if we want, or lowest is bottom)
-            // TradingView style: Asks on top, Bids on bottom. Asks sorted Ascending (lowest price bottom of asks block).
+            
+            // Asks (Reverse so highest price is top)
             foreach(var ask in asks.AsEnumerable().Reverse())
             {
                 float barW = (ask.Quantity / maxQty) * width;
@@ -81,53 +83,82 @@ public class SidebarRenderer
         }
     }
 
-    public void RenderRightSidebar(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
+    public void RenderTrades(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
     {
-        canvas.DrawRect(0, 0, width, height, _bgPaint);
-        
-        // 1. WATCHLIST (Top Half)
-        float watchlistH = height * 0.4f;
-        canvas.DrawText("WATCHLIST", 10, 25, _headerFont, _headerTextPaint);
-        canvas.DrawLine(0, 35, width, 35, _linePaint);
-        
-        float y = 60;
-        string[] symbols = { "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT" };
-        using var itemTextPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
-
-        foreach(var s in symbols)
+        if (trades == null || trades.Count == 0)
         {
-            canvas.DrawText(s, 10, y, _itemFont, itemTextPaint);
-            canvas.DrawText("---", width - 60, y, _itemFont, itemTextPaint);
-            y += 25;
-            if (y > watchlistH - 20) break;
+            RenderEmptyState(canvas, width, height, "No recent trades");
+            return;
         }
 
-        // 2. MARKET TRADES (Bottom Half)
-        float tradesStartY = watchlistH;
-        canvas.DrawLine(0, tradesStartY, width, tradesStartY, _linePaint);
-        canvas.DrawText("MARKET TRADES", 10, tradesStartY + 25, _headerFont, _headerTextPaint);
-        canvas.DrawLine(0, tradesStartY + 35, width, tradesStartY + 35, _linePaint);
-
-        if (trades == null || trades.Count == 0) return;
-
         float rowH = 20;
-        y = tradesStartY + 55;
+        float y = 10;
         
-        // Show last ~20-30 trades
+        // Column headers
+        using var headerPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+        using var headerFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 10);
+        canvas.DrawText("PRICE", 10, y, headerFont, headerPaint);
+        canvas.DrawText("AMOUNT", width / 2 - 10, y, headerFont, headerPaint);
+        canvas.DrawText("TIME", width - 60, y, headerFont, headerPaint);
+        
+        y += 18;
+        canvas.DrawLine(5, y, width - 5, y, _linePaint);
+        y += 8;
+        
+        // Show last trades
         int count = Math.Min(trades.Count, (int)((height - y) / rowH));
+        
+        using var timePaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
         
         for (int i = 0; i < count; i++)
         {
             var t = trades[i];
-            var paint = t.IsBuyerMaker ? _askTextPaint : _bidTextPaint; // BuyerMaker = Sell (Red)
+            var paint = t.IsBuyerMaker ? _askTextPaint : _bidTextPaint;
             
             canvas.DrawText(t.Price.ToString("F2"), 10, y, _itemFont, paint);
-            canvas.DrawText(t.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
+            canvas.DrawText(t.Quantity.ToString("F4"), width / 2 - 10, y, _itemFont, _headerTextPaint);
             
             DateTime dt = DateTimeOffset.FromUnixTimeMilliseconds(t.Timestamp).LocalDateTime;
-            canvas.DrawText(dt.ToString("HH:mm:ss"), width - 60, y, _itemFont, itemTextPaint);
+            canvas.DrawText(dt.ToString("HH:mm:ss"), width - 60, y, _itemFont, timePaint);
             
             y += rowH;
         }
+    }
+
+    public void RenderWatchlist(SKCanvas canvas, float width, float height)
+    {
+        float y = 10;
+        string[] symbols = { "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT" };
+        
+        using var itemPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
+        using var pricePaint = new SKPaint { Color = ThemeManager.TextPrimary, IsAntialias = true };
+
+        foreach(var sym in symbols)
+        {
+            canvas.DrawText(sym, 10, y, _itemFont, itemPaint);
+            canvas.DrawText("---", width - 60, y, _itemFont, pricePaint);
+            y += 25;
+            if (y > height - 10) break;
+        }
+    }
+
+    public void RenderPositions(SKCanvas canvas, float width, float height)
+    {
+        RenderEmptyState(canvas, width, height, "No open positions");
+    }
+
+    private void RenderEmptyState(SKCanvas canvas, float width, float height, string message)
+    {
+        using var emptyPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+        using var emptyFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 12);
+        
+        float textWidth = TextMeasureCache.Instance.MeasureText(message, emptyFont);
+        canvas.DrawText(message, (width - textWidth) / 2, height / 2, emptyFont, emptyPaint);
+    }
+
+    public void RenderRightSidebar(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
+    {
+        // Deprecated - use individual render methods instead
+        RenderTrades(canvas, width, height, trades);
     }
 }

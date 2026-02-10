@@ -28,6 +28,7 @@ public static class SvgIconRenderer
         LineChart,
         AreaChart,
         Bars,
+        Chart,
 
         // UI Controls
         Settings,
@@ -37,7 +38,14 @@ public static class SvgIconRenderer
         ZoomOut,
         Screenshot,
         Fullscreen,
-        Timeframe
+        Timeframe,
+        
+        // Panel Icons
+        OrderBook,
+        Exchange,
+        Star,
+        Wallet,
+        Bell
     }
 
     /// <summary>
@@ -107,6 +115,9 @@ public static class SvgIconRenderer
             case Icon.Bars:
                 DrawBars(canvas, fillPaint);
                 break;
+            case Icon.Chart:
+                DrawCandles(canvas, paint); // Alias para Candles
+                break;
             case Icon.Settings:
                 DrawSettings(canvas, paint);
                 break;
@@ -130,6 +141,21 @@ public static class SvgIconRenderer
                 break;
             case Icon.Timeframe:
                 DrawTimeframe(canvas, paint);
+                break;
+            case Icon.OrderBook:
+                DrawOrderBook(canvas, paint);
+                break;
+            case Icon.Exchange:
+                DrawExchange(canvas, paint);
+                break;
+            case Icon.Star:
+                DrawStar(canvas, fillPaint);
+                break;
+            case Icon.Wallet:
+                DrawWallet(canvas, paint, fillPaint);
+                break;
+            case Icon.Bell:
+                DrawBell(canvas, paint);
                 break;
         }
 
@@ -368,5 +394,87 @@ public static class SvgIconRenderer
         canvas.DrawCircle(12, 12, 10, paint);
         canvas.DrawLine(12, 6, 12, 12, paint);
         canvas.DrawLine(12, 12, 16, 14, paint);
+    }
+
+    private static void DrawOrderBook(SKCanvas canvas, SKPaint paint)
+    {
+        // Book icon
+        canvas.DrawRoundRect(new SKRect(5, 3, 19, 21), 2, 2, paint);
+        canvas.DrawLine(12, 3, 12, 21, paint);
+        canvas.DrawLine(7, 8, 10, 8, paint);
+        canvas.DrawLine(14, 8, 17, 8, paint);
+        canvas.DrawLine(7, 12, 10, 12, paint);
+        canvas.DrawLine(14, 12, 17, 12, paint);
+        canvas.DrawLine(7, 16, 10, 16, paint);
+        canvas.DrawLine(14, 16, 17, 16, paint);
+    }
+
+    private static void DrawExchange(SKCanvas canvas, SKPaint paint)
+    {
+        // Two arrows (exchange)
+        paint.StrokeWidth = 2.5f;
+        // Arrow up-right
+        canvas.DrawLine(5, 14, 15, 4, paint);
+        canvas.DrawLine(15, 4, 11, 4, paint);
+        canvas.DrawLine(15, 4, 15, 8, paint);
+        
+        // Arrow down-left
+        canvas.DrawLine(19, 10, 9, 20, paint);
+        canvas.DrawLine(9, 20, 13, 20, paint);
+        canvas.DrawLine(9, 20, 9, 16, paint);
+        paint.StrokeWidth = 2f;
+    }
+
+    private static void DrawStar(SKCanvas canvas, SKPaint fillPaint)
+    {
+        // 5-point star
+        using var path = new SKPath();
+        float centerX = 12f;
+        float centerY = 12f;
+        float outerRadius = 10f;
+        float innerRadius = 4f;
+        
+        for (int i = 0; i < 10; i++)
+        {
+            float radius = (i % 2 == 0) ? outerRadius : innerRadius;
+            float angle = (i * 36 - 90) * (float)System.Math.PI / 180f;
+            float x = centerX + radius * (float)System.Math.Cos(angle);
+            float y = centerY + radius * (float)System.Math.Sin(angle);
+            
+            if (i == 0) path.MoveTo(x, y);
+            else path.LineTo(x, y);
+        }
+        path.Close();
+        canvas.DrawPath(path, fillPaint);
+    }
+
+    private static void DrawWallet(SKCanvas canvas, SKPaint paint, SKPaint fillPaint)
+    {
+        // Wallet shape
+        canvas.DrawRoundRect(new SKRect(3, 7, 21, 19), 2, 2, paint);
+        canvas.DrawLine(3, 10, 21, 10, paint);
+        
+        // Card slot
+        canvas.DrawRect(new SKRect(17, 12, 20, 16), fillPaint);
+    }
+
+    private static void DrawBell(SKCanvas canvas, SKPaint paint)
+    {
+        // Bell shape
+        using var path = new SKPath();
+        path.MoveTo(12, 3);
+        path.LineTo(10, 5);
+        path.LineTo(10, 12);
+        path.CubicTo(10, 15, 10.5f, 17, 12, 18);
+        path.CubicTo(13.5f, 17, 14, 15, 14, 12);
+        path.LineTo(14, 5);
+        path.Close();
+        canvas.DrawPath(path, paint);
+        
+        // Clapper
+        canvas.DrawCircle(12, 18, 1, paint);
+        
+        // Bottom arc
+        canvas.DrawLine(10, 19, 14, 19, paint);
     }
 }

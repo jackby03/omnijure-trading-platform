@@ -75,8 +75,8 @@ public static class Program
         // Let's print env vars for debug if we crash again.
         
         var options = WindowOptions.Default;
-        options.Size = new Vector2D<int>(1280, 720);
-        options.Title = "Omnijure (1/2/3=Timeframe, Scroll=Zoom, Drag=Pan)";
+        options.Size = new Vector2D<int>(1920, 1080); // Ventana Full HD
+        options.Title = "Omnijure Trading Platform";
         options.VSync = true;
         options.FramesPerSecond = 144;
         options.UpdatesPerSecond = 144;
@@ -647,9 +647,12 @@ public static class Program
              return; // Block all other mouse move logic (crosshair etc) when modal is active
         }
 
-        if (_layout.IsResizingLeft || _layout.IsResizingRight)
+        // NUEVO: Manejar movimiento de paneles (drag & drop)
+        _layout.HandleMouseMove(pos.X, pos.Y, deltaX, _window.Size.X, _window.Size.Y);
+        
+        // Si está arrastrando panel, bloquear otras interacciones
+        if (_layout.IsDraggingPanel)
         {
-            _layout.HandleMouseMove(pos.X, pos.Y, deltaX);
             _lastMousePos = _mousePos;
             return;
         }
