@@ -79,11 +79,19 @@ public class HorizontalLineObject : DrawingObject
 
     public override bool HitTest(float x, float y, float tolerance)
     {
-        // Check if y coordinate is within tolerance of the line
-        // (Horizontal line spans entire width, so only check y)
-        float chartY = y; // Already in screen coordinates
-        float lineY = chartY; // Would need to convert from Price in actual usage
+        // For hit testing, we need the chart parameters to convert price to Y
+        // Since we don't have them in this method signature, we'll return false for now
+        // Proper implementation would require adding chart parameters to HitTest
+        // TODO: Refactor HitTest to include minPrice, maxPrice, chartHeight
+        return false;
+    }
 
+    /// <summary>
+    /// Performs hit test with chart parameters
+    /// </summary>
+    public bool HitTest(float x, float y, float minPrice, float maxPrice, int chartHeight, float tolerance)
+    {
+        float lineY = PriceToY(Price, minPrice, maxPrice, chartHeight);
         return System.Math.Abs(y - lineY) <= tolerance;
     }
 }

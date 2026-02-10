@@ -83,9 +83,44 @@ public class TrendLineObject : DrawingObject
 
     public override bool HitTest(float x, float y, float tolerance)
     {
-        // For now, simple distance to line segment check
-        // This is a placeholder - proper implementation would calculate
-        // perpendicular distance to line segment
-        return false; // TODO: Implement proper line hit testing
+        // Hit testing without chart parameters - return false
+        // Use the overload with chart parameters for proper hit testing
+        return false;
+    }
+
+    /// <summary>
+    /// Performs hit test with chart parameters
+    /// </summary>
+    public bool HitTest(float x, float y, int visibleCandles, int scrollOffset, float candleWidth,
+        int chartHeight, float minPrice, float maxPrice, float tolerance)
+    {
+        // Convert data coordinates to screen coordinates
+        float x1 = IndexToX(Start.Index, visibleCandles, scrollOffset, candleWidth);
+        float y1 = PriceToY(Start.Price, minPrice, maxPrice, chartHeight);
+        float x2 = IndexToX(End.Index, visibleCandles, scrollOffset, candleWidth);
+        float y2 = PriceToY(End.Price, minPrice, maxPrice, chartHeight);
+
+        // Calculate perpendicular distance from point to line segment
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float lengthSquared = dx * dx + dy * dy;
+
+        if (lengthSquared < 0.0001f) // Line is basically a point
+        {
+            float dist = (float)System.Math.Sqrt((x - x1) * (x - x1) + (y - y1) * (y - y1));
+            return dist <= tolerance;
+        }
+
+        // Calculate projection parameter t
+        float t = System.Math.Max(0, System.Math.Min(1, ((x - x1) * dx + (y - y1) * dy) / lengthSquared));
+
+        // Find closest point on line segment
+        float closestX = x1 + t * dx;
+        float closestY = y1 + t * dy;
+
+        // Calculate distance to closest point
+        float distance = (float)System.Math.Sqrt((x - closestX) * (x - closestX) + (y - closestY) * (y - closestY));
+
+        return distance <= tolerance;
     }
 }

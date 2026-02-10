@@ -333,7 +333,13 @@ public static class Program
         }
 
         if (arg2 == Key.Space) { _scrollOffset = 0; _zoom = 1.0f; }
-        
+
+        // Delete last drawing (Ctrl+Z-like behavior for now)
+        if (arg2 == Key.Delete && _drawingState.Objects.Count > 0)
+        {
+            _drawingState.Objects.RemoveAt(_drawingState.Objects.Count - 1);
+        }
+
         // Timeframe Switching
         if (arg2 == Key.Number1) SwitchContext(_currentSymbol, "1m");
         if (arg2 == Key.Number2) SwitchContext(_currentSymbol, "5m");
@@ -560,6 +566,13 @@ public static class Program
             _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
             if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
 
+            // Handle drawing tool interaction on chart
+            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _drawingState.ActiveTool != Omnijure.Visual.Drawing.DrawingTool.None)
+            {
+                HandleDrawingToolClick();
+                return;
+            }
+
             if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _mousePos.X > _layout.ChartRect.Right - 70)
             {
                 _isResizingPrice = true;
@@ -567,14 +580,23 @@ public static class Program
             }
             else if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
             {
-                _isDragging = true; 
+                _isDragging = true;
             }
         }
         else if (arg2 == MouseButton.Right)
         {
-            _autoScaleY = true;
-            _zoom = 1.0f;
-            _scrollOffset = 0;
+            // Cancel current drawing if any
+            if (_drawingState.CurrentDrawing != null)
+            {
+                _drawingState.CurrentDrawing = null;
+                _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
+            }
+            else
+            {
+                _autoScaleY = true;
+                _zoom = 1.0f;
+                _scrollOffset = 0;
+            }
             foreach(var dd in _uiDropdowns) { dd.IsOpen = false; dd.SearchQuery = ""; dd.ScrollOffset = 0; }
         }
     }
@@ -640,6 +662,38 @@ public static class Program
             _viewMinY = mid - newRange / 2.0f;
             _viewMaxY = mid + newRange / 2.0f;
         }
+        else if (_drawingState.CurrentDrawing != null && _layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
+        {
+            // Update current drawing (e.g., trend line endpoint) as mouse moves
+            float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
+            float chartLocalY = _mousePos.Y - _layout.ChartRect.Top;
+
+            const int RightAxisWidth = 60;
+            const int BottomAxisHeight = 30;
+            const int VolumeHeight = 80;
+            int chartW = (int)_layout.ChartRect.Width - RightAxisWidth;
+            int mainChartH = (int)_layout.ChartRect.Height - BottomAxisHeight - VolumeHeight;
+
+            if (chartLocalX >= 0 && chartLocalX <= chartW && chartLocalY >= 0 && chartLocalY <= mainChartH)
+            {
+                float baseCandleWidth = 8.0f;
+                float candleWidth = baseCandleWidth * _zoom;
+                if (candleWidth < 1.0f) candleWidth = 1.0f;
+                int visibleCandles = (int)System.Math.Ceiling(chartW / candleWidth);
+                if (visibleCandles < 2) visibleCandles = 2;
+
+                int screenIndex = (int)((visibleCandles - 1) - (chartLocalX - candleWidth / 2) / candleWidth);
+                int candleIndex = screenIndex + _scrollOffset;
+
+                float normalized = (mainChartH - chartLocalY) / mainChartH;
+                float price = _viewMinY + (normalized * (_viewMaxY - _viewMinY));
+
+                if (_drawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
+                {
+                    trendLine.End = (candleIndex, price);
+                }
+            }
+        }
         else if (_isDragging)
         {
             // Horizontal Pan (TradingView-style: allow free scrolling into future)
@@ -667,6 +721,80 @@ public static class Program
         
         // Hover effects
         foreach(var btn in _uiButtons) btn.IsHovered = btn.Contains(pos.X, pos.Y);
+    }
+
+    private static void HandleDrawingToolClick()
+    {
+        // Convert screen coordinates to chart-local coordinates
+        float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
+        float chartLocalY = _mousePos.Y - _layout.ChartRect.Top;
+
+        // Chart dimensions (matching ChartRenderer's layout)
+        const int RightAxisWidth = 60;
+        const int BottomAxisHeight = 30;
+        const int VolumeHeight = 80;
+        int chartW = (int)_layout.ChartRect.Width - RightAxisWidth;
+        int mainChartH = (int)_layout.ChartRect.Height - BottomAxisHeight - VolumeHeight;
+
+        // Only handle clicks in the main chart area (not volume panel or axes)
+        if (chartLocalX < 0 || chartLocalX > chartW || chartLocalY < 0 || chartLocalY > mainChartH)
+            return;
+
+        // Calculate candle width and visible candles (matching ChartRenderer logic)
+        float baseCandleWidth = 8.0f;
+        float candleWidth = baseCandleWidth * _zoom;
+        if (candleWidth < 1.0f) candleWidth = 1.0f;
+        int visibleCandles = (int)System.Math.Ceiling(chartW / candleWidth);
+        if (visibleCandles < 2) visibleCandles = 2;
+
+        // Convert screen X to candle index
+        int screenIndex = (int)((visibleCandles - 1) - (chartLocalX - candleWidth / 2) / candleWidth);
+        int candleIndex = screenIndex + _scrollOffset;
+
+        // Convert screen Y to price
+        float normalized = (mainChartH - chartLocalY) / mainChartH;
+        float price = _viewMinY + (normalized * (_viewMaxY - _viewMinY));
+
+        // Handle different drawing tools
+        switch (_drawingState.ActiveTool)
+        {
+            case Omnijure.Visual.Drawing.DrawingTool.HorizontalLine:
+                // Single click creates horizontal line
+                var hLine = new Omnijure.Visual.Drawing.HorizontalLineObject(price)
+                {
+                    Label = null
+                };
+                _drawingState.Objects.Add(hLine);
+                _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None; // Return to cursor
+                break;
+
+            case Omnijure.Visual.Drawing.DrawingTool.TrendLine:
+                // Two-click process: start and end
+                if (_drawingState.CurrentDrawing == null)
+                {
+                    // First click - create new trend line
+                    var tLine = new Omnijure.Visual.Drawing.TrendLineObject
+                    {
+                        Start = (candleIndex, price),
+                        End = (candleIndex, price) // Will be updated on second click
+                    };
+                    _drawingState.CurrentDrawing = tLine;
+                }
+                else if (_drawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
+                {
+                    // Second click - finalize trend line
+                    trendLine.End = (candleIndex, price);
+                    _drawingState.Objects.Add(trendLine);
+                    _drawingState.CurrentDrawing = null;
+                    _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None; // Return to cursor
+                }
+                break;
+
+            case Omnijure.Visual.Drawing.DrawingTool.None:
+            default:
+                // No active tool - could implement selection here
+                break;
+        }
     }
 
     private static void OnRender(double delta)

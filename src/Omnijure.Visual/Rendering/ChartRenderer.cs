@@ -29,7 +29,7 @@ public class ChartRenderer
 
     // Render method...
 
-    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice, Vector2D<float> mousePos)
+    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice, Vector2D<float> mousePos, Omnijure.Visual.Drawing.DrawingToolState? drawingState = null)
     {
         // 1. Layout Margins (TradingView style with volume panel)
         const int RightAxisWidth = 60;
@@ -77,6 +77,21 @@ public class ChartRenderer
 
         // Draw chart legend (TradingView-style indicator values)
         DrawChartLegend(canvas, buffer, symbol, interval, visibleCandles, scrollOffset);
+
+        // Draw drawing objects (trend lines, horizontal lines, etc.)
+        if (drawingState != null)
+        {
+            foreach (var drawing in drawingState.Objects)
+            {
+                drawing.Draw(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice);
+            }
+
+            // Draw current drawing being created
+            if (drawingState.CurrentDrawing != null)
+            {
+                drawingState.CurrentDrawing.Draw(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice);
+            }
+        }
 
         // CROSSHAIR LINES (Inside Main Chart Clip)
         bool isHoverChart = mousePos.X >= 0 && mousePos.X <= chartW && mousePos.Y >= 0 && mousePos.Y <= mainChartH;

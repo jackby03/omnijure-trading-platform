@@ -167,7 +167,7 @@ public class LayoutManager
         canvas.Translate(ChartRect.Left, ChartRect.Top);
         // Correcting mousePos: ChartRenderer expects local mouse coordinates
         var localMouse = new Vector2D<float>(mousePos.X - ChartRect.Left, mousePos.Y - HeaderHeight);
-        renderer.Render(canvas, (int)ChartRect.Width, (int)ChartRect.Height, buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, localMouse);
+        renderer.Render(canvas, (int)ChartRect.Width, (int)ChartRect.Height, buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, localMouse, drawingState);
         canvas.Restore();
     }
 }

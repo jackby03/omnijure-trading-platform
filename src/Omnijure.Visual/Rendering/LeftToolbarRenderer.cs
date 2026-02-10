@@ -20,7 +20,7 @@ public class LeftToolbarRenderer
     private readonly SKPaint _separatorPaint;
 
     // Tool configuration: (DrawingTool, Icon, Tooltip)
-    private readonly (DrawingTool Tool, IconRenderer.Icon Icon, string Tooltip)[] _tools;
+    private readonly (DrawingTool Tool, SvgIconRenderer.Icon Icon, string Tooltip)[] _tools;
 
     public LeftToolbarRenderer()
     {
@@ -33,12 +33,12 @@ public class LeftToolbarRenderer
         // Define available tools in order
         _tools = new[]
         {
-            (DrawingTool.None, IconRenderer.Icon.Cursor, "Cursor (Esc)"),
-            (DrawingTool.TrendLine, IconRenderer.Icon.TrendLine, "Trend Line (T)"),
-            (DrawingTool.HorizontalLine, IconRenderer.Icon.HorizontalLine, "Horizontal Line (H)"),
-            (DrawingTool.VerticalLine, IconRenderer.Icon.VerticalLine, "Vertical Line (V)"),
-            (DrawingTool.Rectangle, IconRenderer.Icon.Rectangle, "Rectangle (R)"),
-            (DrawingTool.Fibonacci, IconRenderer.Icon.Fibonacci, "Fibonacci Retracement (F)"),
+            (DrawingTool.None, SvgIconRenderer.Icon.Cursor, "Cursor (Esc)"),
+            (DrawingTool.TrendLine, SvgIconRenderer.Icon.TrendLine, "Trend Line (T)"),
+            (DrawingTool.HorizontalLine, SvgIconRenderer.Icon.HorizontalLine, "Horizontal Line (H)"),
+            (DrawingTool.VerticalLine, SvgIconRenderer.Icon.VerticalLine, "Vertical Line (V)"),
+            (DrawingTool.Rectangle, SvgIconRenderer.Icon.Rectangle, "Rectangle (R)"),
+            (DrawingTool.Fibonacci, SvgIconRenderer.Icon.Fibonacci, "Fibonacci Retracement (F)"),
         };
     }
 
@@ -74,9 +74,9 @@ public class LeftToolbarRenderer
             SKPaint btnPaint = isActive ? _btnActive : (isHovered ? _btnHover : _btnDefault);
             canvas.DrawRoundRect(btnRect, ThemeManager.BorderRadius, ThemeManager.BorderRadius, btnPaint);
 
-            // Icon
+            // Icon (SVG-based for crisp rendering)
             SKColor iconColor = isActive ? ThemeManager.TextWhite : ThemeManager.TextSecondary;
-            IconRenderer.DrawIconCentered(canvas, icon, btnRect, IconSize, iconColor);
+            SvgIconRenderer.DrawIconCentered(canvas, icon, btnRect, IconSize, iconColor);
 
             y += ButtonSize + ButtonSpacing;
 
