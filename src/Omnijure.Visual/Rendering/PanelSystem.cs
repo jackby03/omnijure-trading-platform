@@ -14,23 +14,29 @@ public class PanelSystem
 {
     private readonly Dictionary<string, DockablePanel> _panels = new();
     private DockablePanel? _draggingPanel;
-    private DockablePanel? _potentialDragPanel; // Panel que podría empezar a arrastrarse
-    private SKPoint _mouseDownPosition; // Posición inicial del mouse
+    private DockablePanel? _potentialDragPanel;
+    private SKPoint _mouseDownPosition;
     private DockablePanel? _hoveredPanel;
     private string? _hoveredHandle;
     private SKPoint _dragOffset;
     private DockZone? _currentDockZone;
     
+    // ? Guardar estado original para restaurar si se cancela el drag
+    private PanelPosition _originalPosition;
+    private bool _originalIsFloating;
+    private SKRect _originalBounds;
+    
     private const float HandleSize = 24f;
     private const float CollapsedWidth = 32f;
     private const float HandlePadding = 6f;
-    private const float DragThreshold = 5f; // Píxeles que debe moverse antes de empezar el drag
+    private const float DragThreshold = 5f;
 
     public IReadOnlyCollection<DockablePanel> Panels => _panels.Values;
 
     public PanelSystem()
     {
         // Inicializar paneles por defecto
+        CreatePanel(PanelDefinitions.CHART);      // ? Chart es un panel más
         CreatePanel(PanelDefinitions.WATCHLIST);
         CreatePanel(PanelDefinitions.ORDERBOOK);
         CreatePanel(PanelDefinitions.TRADES);
@@ -52,30 +58,47 @@ public class PanelSystem
         float currentRightX = screenWidth;
         float currentBottomY = screenHeight;
 
-        // Update docked panels positions
-        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Left && !p.IsFloating).OrderBy(p => p.DockOrder))
+        // ???????????????????????????????????????????????????????????
+        // PASO 1: Calcular Left panels (full height)
+        // ???????????????????????????????????????????????????????????
+        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Left && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
         {
             float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
             panel.Bounds = new SKRect(currentLeftX, headerHeight, currentLeftX + width, screenHeight);
             currentLeftX += width;
         }
 
-        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Right && !p.IsFloating).OrderBy(p => p.DockOrder))
+        // ???????????????????????????????????????????????????????????
+        // PASO 2: Calcular Right panels (full height)
+        // ???????????????????????????????????????????????????????????
+        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Right && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
         {
             float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
             panel.Bounds = new SKRect(currentRightX - width, headerHeight, currentRightX, screenHeight);
             currentRightX -= width;
         }
 
-        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating).OrderBy(p => p.DockOrder))
+        // ???????????????????????????????????????????????????????????
+        // PASO 3: Calcular Bottom panels (entre Left y Right)
+        // ???????????????????????????????????????????????????????????
+        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
         {
             float height = panel.IsCollapsed ? CollapsedWidth : panel.Height;
             panel.Bounds = new SKRect(currentLeftX, currentBottomY - height, currentRightX, currentBottomY);
             currentBottomY -= height;
         }
 
-        // Update handle positions for all panels
-        foreach (var panel in _panels.Values)
+        // ???????????????????????????????????????????????????????????
+        // PASO 4: Center panel ocupa el espacio restante
+        // ???????????????????????????????????????????????????????????
+        var centerPanel = _panels.Values.FirstOrDefault(p => p.Position == PanelPosition.Center && !p.IsClosed);
+        if (centerPanel != null)
+        {
+            centerPanel.Bounds = new SKRect(currentLeftX, headerHeight, currentRightX, currentBottomY);
+        }
+
+        // Update handle positions for all visible panels
+        foreach (var panel in _panels.Values.Where(p => !p.IsClosed))
         {
             UpdatePanelHandles(panel);
         }
@@ -102,8 +125,8 @@ public class PanelSystem
             );
         }
 
-        // Close handle (al lado del collapse)
-        if (panel.Config.CanClose && panel.IsFloating)
+        // Close handle (al lado del collapse) - SIEMPRE si puede cerrarse
+        if (panel.Config.CanClose)
         {
             panel.CloseHandleBounds = new SKRect(
                 panel.Bounds.Right - HandlePadding - HandleSize * 2 - 4,
@@ -125,25 +148,33 @@ public class PanelSystem
 
     public void Render(SKCanvas canvas)
     {
-        // Render docked panels
-        foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel))
+        // ???????????????????????????????????????????????????????????
+        // ORDEN DE RENDERIZADO (de abajo hacia arriba):
+        // 1. Paneles dockeados (base) - EXCEPTO Center (chart)
+        // 2. Paneles flotantes
+        // 3. Preview de dock zone (sobre todo)
+        // 4. Panel arrastrándose (capa superior)
+        // ???????????????????????????????????????????????????????????
+        
+        // CAPA 1: Render docked panels (NO Center - ese se renderiza aparte)
+        foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel && !p.IsClosed && p.Position != PanelPosition.Center))
         {
             RenderPanel(canvas, panel);
         }
 
-        // Render floating panels
-        foreach (var panel in _panels.Values.Where(p => p.IsFloating && p != _draggingPanel))
+        // CAPA 2: Render floating panels
+        foreach (var panel in _panels.Values.Where(p => p.IsFloating && p != _draggingPanel && !p.IsClosed))
         {
             RenderPanel(canvas, panel);
         }
 
-        // Render dock zone preview
+        // CAPA 3: Render dock zone preview (SOBRE TODOS los paneles)
         if (_draggingPanel != null && _currentDockZone != null)
         {
             RenderDockZonePreview(canvas, _currentDockZone);
         }
 
-        // Render dragging panel last (with shadow)
+        // CAPA 4: Render dragging panel ÚLTIMO (z-index más alto)
         if (_draggingPanel != null)
         {
             RenderDraggingPanel(canvas, _draggingPanel);
@@ -262,8 +293,8 @@ public class PanelSystem
                 _hoveredHandle == $"{panel.Config.Id}_collapse", panel.Position);
         }
 
-        // Close handle (X)
-        if (panel.Config.CanClose && panel.IsFloating)
+        // Close handle (X) - SIEMPRE visible si puede cerrarse
+        if (panel.Config.CanClose)
         {
             RenderHandle(canvas, panel.CloseHandleBounds, "close", 
                 _hoveredHandle == $"{panel.Config.Id}_close", panel.Position);
@@ -394,19 +425,33 @@ public class PanelSystem
         var paint = PaintPool.Instance.Rent();
         try
         {
-            // Drop shadow profunda
-            paint.Color = new SKColor(0, 0, 0, 120);
-            paint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 20);
+            // ? SOMBRA MUY PROMINENTE (para que se vea claramente sobre todo)
+            paint.Color = new SKColor(0, 0, 0, 180); // Más opaca
+            paint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 30); // Más grande
             paint.Style = SKPaintStyle.Fill;
-            var shadowRect = new SKRect(panel.Bounds.Left + 8, panel.Bounds.Top + 8, 
-                panel.Bounds.Right + 8, panel.Bounds.Bottom + 8);
+            
+            // Sombra desplazada
+            var shadowRect = new SKRect(
+                panel.Bounds.Left + 12, 
+                panel.Bounds.Top + 12, 
+                panel.Bounds.Right + 12, 
+                panel.Bounds.Bottom + 12
+            );
             canvas.DrawRoundRect(shadowRect, 6, 6, paint);
+            
+            // ? Borde brillante para destacar aún más
+            paint.MaskFilter = null;
+            paint.Color = new SKColor(70, 140, 255, 255);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 3;
+            canvas.DrawRoundRect(panel.Bounds, 6, 6, paint);
         }
         finally
         {
             PaintPool.Instance.Return(paint);
         }
 
+        // Render panel normal encima de la sombra
         RenderPanel(canvas, panel);
     }
 
@@ -415,24 +460,24 @@ public class PanelSystem
         var paint = PaintPool.Instance.Rent();
         try
         {
-            // Animated glow (breathing effect)
-            float pulse = (float)(Math.Sin(DateTime.Now.Millisecond / 150.0) * 30 + 70);
+            // ? FONDO SEMI-TRANSPARENTE MÁS VISIBLE (z-index superior)
+            float pulse = (float)(Math.Sin(DateTime.Now.Millisecond / 150.0) * 30 + 100);
             
             paint.Color = new SKColor(70, 140, 255, (byte)pulse);
             paint.Style = SKPaintStyle.Fill;
             canvas.DrawRect(zone.PreviewRect, paint);
 
-            // Dashed border animated
-            paint.Color = new SKColor(70, 140, 255, 220);
+            // ? BORDE ANIMADO MÁS GRUESO Y BRILLANTE
+            paint.Color = new SKColor(70, 140, 255, 255);
             paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = 3;
-            paint.PathEffect = SKPathEffect.CreateDash(new float[] { 12, 6 }, 0);
+            paint.StrokeWidth = 4; // Más grueso
+            paint.PathEffect = SKPathEffect.CreateDash(new float[] { 16, 8 }, 0);
             canvas.DrawRect(zone.PreviewRect, paint);
 
-            // Icon indicator grande
-            using var iconFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 48);
+            // ? ICONO GRANDE Y CLARO
+            using var iconFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 60);
             paint.PathEffect = null;
-            paint.Color = new SKColor(70, 140, 255, 200);
+            paint.Color = new SKColor(255, 255, 255, 255); // Blanco puro
             paint.Style = SKPaintStyle.Fill;
             
             string icon = zone.Position switch
@@ -440,26 +485,31 @@ public class PanelSystem
                 PanelPosition.Left => "?",
                 PanelPosition.Right => "?",
                 PanelPosition.Bottom => "?",
+                PanelPosition.Top => "?",
+                PanelPosition.Center => "?",
                 _ => "?"
             };
             
             float iconWidth = TextMeasureCache.Instance.MeasureText(icon, iconFont);
             canvas.DrawText(icon, zone.PreviewRect.MidX - iconWidth / 2, 
-                zone.PreviewRect.MidY + 18, iconFont, paint);
+                zone.PreviewRect.MidY + 24, iconFont, paint);
 
-            // Texto descriptivo
-            using var textFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 20);
+            // ? TEXTO MÁS GRANDE Y LEGIBLE
+            using var textFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 24);
             string text = zone.Position switch
             {
                 PanelPosition.Left => "DOCK LEFT",
                 PanelPosition.Right => "DOCK RIGHT",
                 PanelPosition.Bottom => "DOCK BOTTOM",
+                PanelPosition.Top => "DOCK TOP",
+                PanelPosition.Center => "DOCK CENTER",
                 _ => "DOCK HERE"
             };
             
             float textWidth = TextMeasureCache.Instance.MeasureText(text, textFont);
+            paint.Color = new SKColor(255, 255, 255, 255);
             canvas.DrawText(text, zone.PreviewRect.MidX - textWidth / 2, 
-                zone.PreviewRect.MidY + 60, textFont, paint);
+                zone.PreviewRect.MidY + 70, textFont, paint);
         }
         finally
         {
@@ -475,11 +525,12 @@ public class PanelSystem
         // Check handles first (priority order)
         foreach (var panel in _panels.Values.OrderByDescending(p => p.IsFloating))
         {
-            // Close handle
-            if (panel.Config.CanClose && panel.IsFloating && panel.CloseHandleBounds.Contains(x, y))
+            if (panel.IsClosed) continue; // ? Ignorar paneles cerrados
+            
+            // Close handle - CERRAR panel (no flotar)
+            if (panel.Config.CanClose && panel.CloseHandleBounds.Contains(x, y))
             {
-                panel.IsFloating = false;
-                panel.Position = panel.Config.DefaultPosition;
+                panel.IsClosed = true;  // ? Ocultar completamente
                 return;
             }
 
@@ -506,9 +557,17 @@ public class PanelSystem
         {
             if (_currentDockZone != null)
             {
+                // ? Hay zona válida - aplicar docking
                 _draggingPanel.Position = _currentDockZone.Position;
                 _draggingPanel.IsFloating = false;
                 _draggingPanel.DockOrder = GetNextDockOrder(_currentDockZone.Position);
+            }
+            else
+            {
+                // ? NO hay zona válida - RESTAURAR posición original
+                _draggingPanel.Position = _originalPosition;
+                _draggingPanel.IsFloating = _originalIsFloating;
+                _draggingPanel.Bounds = _originalBounds;
             }
         }
 
@@ -556,6 +615,11 @@ public class PanelSystem
             {
                 _draggingPanel = _potentialDragPanel;
                 _potentialDragPanel = null;
+                
+                // ? GUARDAR estado original para restaurar si se cancela
+                _originalPosition = _draggingPanel.Position;
+                _originalIsFloating = _draggingPanel.IsFloating;
+                _originalBounds = _draggingPanel.Bounds;
                 
                 // Hacer flotante si no lo era
                 if (!_draggingPanel.IsFloating)
@@ -612,7 +676,7 @@ public class PanelSystem
         float rightMargin = 0;
         float bottomMargin = 0;
 
-        foreach (var panel in _panels.Values.Where(p => !p.IsFloating))
+        foreach (var panel in _panels.Values.Where(p => !p.IsFloating && !p.IsClosed))
         {
             float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
             float height = panel.IsCollapsed ? CollapsedWidth : panel.Height;
@@ -648,6 +712,7 @@ public class DockablePanel
     public float FloatingHeight { get; set; }
     public bool IsCollapsed { get; set; }
     public bool IsFloating { get; set; }
+    public bool IsClosed { get; set; }  // ? Panel cerrado (oculto completamente)
     public int DockOrder { get; set; }
 
     public DockablePanel(PanelConfig config)
@@ -658,6 +723,7 @@ public class DockablePanel
         Height = config.DefaultHeight;
         IsCollapsed = false;
         IsFloating = false;
+        IsClosed = false;  // ? Inicialmente visible
         DockOrder = 0;
     }
 }

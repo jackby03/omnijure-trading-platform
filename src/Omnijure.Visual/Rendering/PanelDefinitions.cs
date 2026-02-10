@@ -1,28 +1,26 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Omnijure.Visual.Rendering;
 
 /// <summary>
-/// Definiciones centralizadas de todos los paneles de la aplicaci�n.
-/// Sistema de nomenclatura claro para referencia f�cil.
+/// Definiciones centralizadas de todos los paneles de la aplicación.
+/// Sistema de nomenclatura claro para referencia fácil.
 /// </summary>
 public static class PanelDefinitions
 {
-    // ???????????????????????????????????????????????????????????
+    // ═══════════════════════════════════════════════════════════
     // IDENTIFICADORES DE PANELES
-    // ???????????????????????????????????????????????????????????
+    // ═══════════════════════════════════════════════════════════
     
     public const string CHART = "chart";
     public const string ORDERBOOK = "orderbook";
     public const string TRADES = "trades";
     public const string WATCHLIST = "watchlist";
     public const string POSITIONS = "positions";
-    public const string INDICATORS = "indicators";
-    public const string DRAWINGS = "drawings";
     public const string ALERTS = "alerts";
 
     /// <summary>
-    /// Configuraci�n de todos los paneles disponibles
+    /// Configuración de todos los paneles disponibles
     /// </summary>
     public static readonly Dictionary<string, PanelConfig> Panels = new()
     {
@@ -34,9 +32,9 @@ public static class PanelDefinitions
             DefaultPosition = PanelPosition.Center,
             DefaultWidth = 800,
             DefaultHeight = 600,
-            CanClose = false,
+            CanClose = true,
             CanCollapse = false,
-            CanFloat = false
+            CanFloat = true
         },
         [ORDERBOOK] = new PanelConfig
         {
@@ -86,30 +84,6 @@ public static class PanelDefinitions
             CanCollapse = true,
             CanFloat = true
         },
-        [INDICATORS] = new PanelConfig
-        {
-            Id = INDICATORS,
-            DisplayName = "Indicators",
-            Icon = SvgIconRenderer.Icon.Chart,
-            DefaultPosition = PanelPosition.Left,
-            DefaultWidth = 280,
-            DefaultHeight = 400,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
-        },
-        [DRAWINGS] = new PanelConfig
-        {
-            Id = DRAWINGS,
-            DisplayName = "Drawings",
-            Icon = SvgIconRenderer.Icon.TrendLine,
-            DefaultPosition = PanelPosition.Left,
-            DefaultWidth = 260,
-            DefaultHeight = 300,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
-        },
         [ALERTS] = new PanelConfig
         {
             Id = ALERTS,
@@ -126,7 +100,7 @@ public static class PanelDefinitions
 }
 
 /// <summary>
-/// Configuraci�n de un panel individual
+/// Configuración de un panel individual
 /// </summary>
 public class PanelConfig
 {

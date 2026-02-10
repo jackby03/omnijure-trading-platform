@@ -103,46 +103,96 @@ public class LayoutManager
         float minPrice, float maxPrice, Vector2D<float> mousePos, OrderBook orderBook, 
         RingBuffer<MarketTrade> trades, Omnijure.Visual.Drawing.DrawingToolState? drawingState)
     {
-        // 1. Render panel system (sidebars con drag & drop)
+        // ???????????????????????????????????????????????????????????
+        // ORDEN DE RENDERIZADO (como tiling window manager / IDE):
+        //   CAPA 0: Chart (fondo, se pinta PRIMERO)
+        //   CAPA 1: Panel backgrounds + handles (sobre chart)
+        //   CAPA 2: Panel content (dentro de cada panel)
+        //   CAPA 3: Dock zone preview (sobre todo)
+        //   CAPA 4: Panel arrastrándose (capa superior)
+        // ???????????????????????????????????????????????????????????
+
+        // CAPA 0: Render Chart PRIMERO (fondo, por debajo de todo)
+        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        bool hasChart = chartPanel != null && !chartPanel.IsClosed;
+
+        if (hasChart)
+        {
+            canvas.Save();
+            canvas.ClipRect(ChartRect); // Clip en coordenadas absolutas
+            canvas.Translate(ChartRect.Left, ChartRect.Top);
+            
+            // Toolbar interno
+            var toolbarMousePos = new Vector2D<float>(mousePos.X - ChartRect.Left, mousePos.Y - ChartRect.Top);
+            _leftToolbar.Render(canvas, ChartRect.Height,
+                drawingState?.ActiveTool ?? Omnijure.Visual.Drawing.DrawingTool.None, 
+                toolbarMousePos.X, toolbarMousePos.Y);
+            
+            // Chart (offset por toolbar)
+            canvas.Save();
+            canvas.Translate(LeftToolbarRenderer.ToolbarWidth, 0);
+            canvas.ClipRect(new SKRect(0, 0, ChartRect.Width - LeftToolbarRenderer.ToolbarWidth, ChartRect.Height));
+            
+            var chartMousePos = new Vector2D<float>(
+                mousePos.X - ChartRect.Left - LeftToolbarRenderer.ToolbarWidth, 
+                mousePos.Y - ChartRect.Top);
+            
+            chartRenderer.Render(canvas, (int)(ChartRect.Width - LeftToolbarRenderer.ToolbarWidth), (int)ChartRect.Height, 
+                buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, 
+                chartMousePos, drawingState);
+            
+            canvas.Restore();
+            canvas.Restore();
+        }
+        else
+        {
+            RenderEmptyState(canvas, ChartRect);
+        }
+
+        // CAPA 1+2: Render panels y su contenido (SOBRE el chart)
         _panelSystem.Render(canvas);
-
-        // 2. Render panel content
         RenderPanelContent(canvas, orderBook, trades, buffer);
+    }
 
-        // 3. Render Chart Panel completo (toolbar + chart, todo clipeado)
-        canvas.Save();
-        canvas.Translate(ChartRect.Left, ChartRect.Top);
-        canvas.ClipRect(new SKRect(0, 0, ChartRect.Width, ChartRect.Height)); // CLIP del chart panel
-        
-        // 3a. Render left toolbar DENTRO del chart panel
-        var toolbarMousePos = new Vector2D<float>(mousePos.X - ChartRect.Left, mousePos.Y - ChartRect.Top);
-        _leftToolbar.Render(canvas, ChartRect.Height, // Usar ChartRect.Height
-            drawingState?.ActiveTool ?? Omnijure.Visual.Drawing.DrawingTool.None, 
-            toolbarMousePos.X, toolbarMousePos.Y);
-        
-        // 3b. Render main chart (offset por el toolbar)
-        canvas.Save();
-        canvas.Translate(LeftToolbarRenderer.ToolbarWidth, 0); // Offset para toolbar
-        canvas.ClipRect(new SKRect(0, 0, ChartRect.Width - LeftToolbarRenderer.ToolbarWidth, ChartRect.Height));
-        
-        // Adjust mouse position (después del toolbar)
-        var chartMousePos = new Vector2D<float>(
-            mousePos.X - ChartRect.Left - LeftToolbarRenderer.ToolbarWidth, 
-            mousePos.Y - ChartRect.Top);
-        
-        chartRenderer.Render(canvas, (int)(ChartRect.Width - LeftToolbarRenderer.ToolbarWidth), (int)ChartRect.Height, 
-            buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons, minPrice, maxPrice, 
-            chartMousePos, drawingState);
-        
-        canvas.Restore(); // Fin chart interno
-        canvas.Restore(); // Fin chart panel
+    private void RenderEmptyState(SKCanvas canvas, SKRect area)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            // Background
+            paint.Color = new SKColor(18, 20, 24);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(area, paint);
+            
+            // Mensaje central
+            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 18);
+            paint.Color = new SKColor(100, 105, 115);
+            paint.IsAntialias = true;
+            
+            string message = "No active panels";
+            float textWidth = TextMeasureCache.Instance.MeasureText(message, font);
+            canvas.DrawText(message, area.MidX - textWidth / 2, area.MidY, font, paint);
+            
+            // Subtitle
+            using var fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 12);
+            string hint = "Drag a panel here or reopen Chart";
+            float hintWidth = TextMeasureCache.Instance.MeasureText(hint, fontSmall);
+            paint.Color = new SKColor(80, 85, 95);
+            canvas.DrawText(hint, area.MidX - hintWidth / 2, area.MidY + 30, fontSmall, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
     }
 
     private void RenderPanelContent(SKCanvas canvas, OrderBook orderBook, RingBuffer<MarketTrade> trades, RingBuffer<Candle> buffer)
     {
         foreach (var panel in _panelSystem.Panels)
         {
-            if (panel.IsCollapsed) continue;
+            // Skip: cerrados, colapsados, el chart (se renderiza aparte)
+            if (panel.IsClosed || panel.IsCollapsed) continue;
+            if (panel.Config.Id == PanelDefinitions.CHART) continue;
 
             canvas.Save();
             canvas.ClipRect(panel.ContentBounds);
@@ -151,69 +201,26 @@ public class LayoutManager
             var contentWidth = panel.ContentBounds.Width;
             var contentHeight = panel.ContentBounds.Height;
 
-            // Renderizar contenido según el ID del panel
             switch (panel.Config.Id)
             {
                 case PanelDefinitions.WATCHLIST:
                     _sidebar.RenderWatchlist(canvas, contentWidth, contentHeight);
                     break;
-                    
                 case PanelDefinitions.ORDERBOOK:
                     _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, orderBook);
                     break;
-                    
                 case PanelDefinitions.TRADES:
                     _sidebar.RenderTrades(canvas, contentWidth, contentHeight, trades);
                     break;
-                    
                 case PanelDefinitions.POSITIONS:
                     _sidebar.RenderPositions(canvas, contentWidth, contentHeight);
                     break;
-                    
-                case PanelDefinitions.INDICATORS:
-                    RenderIndicatorsPanel(canvas, contentWidth, contentHeight);
-                    break;
-                    
-                case PanelDefinitions.DRAWINGS:
-                    RenderDrawingsPanel(canvas, contentWidth, contentHeight);
-                    break;
-                    
                 case PanelDefinitions.ALERTS:
                     RenderAlertsPanel(canvas, contentWidth, contentHeight);
                     break;
             }
 
             canvas.Restore();
-        }
-    }
-
-    private void RenderIndicatorsPanel(SKCanvas canvas, float width, float height)
-    {
-        var paint = PaintPool.Instance.Rent();
-        try
-        {
-            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
-            paint.Color = new SKColor(160, 165, 175);
-            canvas.DrawText("RSI, MACD, EMA coming soon...", 10, 30, font, paint);
-        }
-        finally
-        {
-            PaintPool.Instance.Return(paint);
-        }
-    }
-
-    private void RenderDrawingsPanel(SKCanvas canvas, float width, float height)
-    {
-        var paint = PaintPool.Instance.Rent();
-        try
-        {
-            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
-            paint.Color = new SKColor(160, 165, 175);
-            canvas.DrawText("Drawing tools panel", 10, 30, font, paint);
-        }
-        finally
-        {
-            PaintPool.Instance.Return(paint);
         }
     }
 
