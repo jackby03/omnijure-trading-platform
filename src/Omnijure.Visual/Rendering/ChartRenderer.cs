@@ -458,12 +458,36 @@ public class ChartRenderer
         bool isGreen = currentPrice >= prevPrice;
         float change = prevPrice != 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
 
-        string arrow = isGreen ? "▲" : "▼";
         SKColor priceColor = isGreen ? ThemeManager.Success : ThemeManager.Error;
 
-        string header = $"{symbol}  {currentPrice:F2} {arrow}{Math.Abs(change):F2}%";
+        // Draw symbol + price text
+        string headerBase = $"{symbol}  {currentPrice:F2} ";
         using var headerPaint = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
-        canvas.DrawText(header, x, y, fontBold, headerPaint);
+        canvas.DrawText(headerBase, x, y, fontBold, headerPaint);
+
+        // Draw vector arrow + change %
+        float arrowStartX = x + fontBold.MeasureText(headerBase);
+        using var arrowP = new SKPath();
+        float arrowIconY = y - 8;
+        if (isGreen)
+        {
+            arrowP.MoveTo(arrowStartX, arrowIconY + 7);
+            arrowP.LineTo(arrowStartX + 4, arrowIconY + 1);
+            arrowP.LineTo(arrowStartX + 8, arrowIconY + 7);
+        }
+        else
+        {
+            arrowP.MoveTo(arrowStartX, arrowIconY + 1);
+            arrowP.LineTo(arrowStartX + 4, arrowIconY + 7);
+            arrowP.LineTo(arrowStartX + 8, arrowIconY + 1);
+        }
+        arrowP.Close();
+        using var arrowFillPaint = new SKPaint { Color = priceColor, Style = SKPaintStyle.Fill, IsAntialias = true };
+        canvas.DrawPath(arrowP, arrowFillPaint);
+
+        string changeStr = $"{Math.Abs(change):F2}%";
+        using var changePricePaint = new SKPaint { Color = priceColor, IsAntialias = true };
+        canvas.DrawText(changeStr, arrowStartX + 11, y, fontBold, changePricePaint);
 
         y += lineHeight;
 
