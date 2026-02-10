@@ -38,46 +38,53 @@ public class TrendLineObject : DrawingObject
         float x2 = IndexToX(End.Index, visibleCandles, scrollOffset, candleWidth);
         float y2 = PriceToY(End.Price, minPrice, maxPrice, chartHeight);
 
-        using var paint = GetPaint();
+        var paint = GetPaint();
 
-        if (ExtendLine)
+        try
         {
-            // Calculate line slope and extend to chart edges
-            float dx = x2 - x1;
-            float dy = y2 - y1;
-
-            if (System.Math.Abs(dx) > 0.01f) // Avoid division by zero
+            if (ExtendLine)
             {
-                float slope = dy / dx;
+                // Calculate line slope and extend to chart edges
+                float dx = x2 - x1;
+                float dy = y2 - y1;
 
-                // Extend to left edge (x=0)
-                float leftY = y1 - (x1 * slope);
+                if (System.Math.Abs(dx) > 0.01f) // Avoid division by zero
+                {
+                    float slope = dy / dx;
 
-                // Extend to right edge (x=chartWidth)
-                float chartWidth = visibleCandles * candleWidth;
-                float rightY = y1 + ((chartWidth - x1) * slope);
+                    // Extend to left edge (x=0)
+                    float leftY = y1 - (x1 * slope);
 
-                canvas.DrawLine(0, leftY, chartWidth, rightY, paint);
+                    // Extend to right edge (x=chartWidth)
+                    float chartWidth = visibleCandles * candleWidth;
+                    float rightY = y1 + ((chartWidth - x1) * slope);
+
+                    canvas.DrawLine(0, leftY, chartWidth, rightY, paint);
+                }
+                else
+                {
+                    // Vertical line
+                    canvas.DrawLine(x1, 0, x1, chartHeight, paint);
+                }
             }
             else
             {
-                // Vertical line
-                canvas.DrawLine(x1, 0, x1, chartHeight, paint);
+                // Draw line segment only between the two points
+                canvas.DrawLine(x1, y1, x2, y2, paint);
+            }
+
+            // Draw selection handles if selected
+            if (IsSelected)
+            {
+                DrawSelectionHandles(canvas, new[] {
+                    new SKPoint(x1, y1),
+                    new SKPoint(x2, y2)
+                });
             }
         }
-        else
+        finally
         {
-            // Draw line segment only between the two points
-            canvas.DrawLine(x1, y1, x2, y2, paint);
-        }
-
-        // Draw selection handles if selected
-        if (IsSelected)
-        {
-            DrawSelectionHandles(canvas, new[] {
-                new SKPoint(x1, y1),
-                new SKPoint(x2, y2)
-            });
+            Visual.Rendering.PaintPool.Instance.Return(paint);
         }
     }
 

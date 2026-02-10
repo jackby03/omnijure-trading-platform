@@ -159,7 +159,7 @@ public class SearchModalRenderer
         // Cursor (if visible)
         if (modal.IsVisible)
         {
-            float textWidth = _font.MeasureText(modal.SearchText);
+            float textWidth = TextMeasureCache.Instance.MeasureText(modal.SearchText ?? "", _font);
             float cursorX = searchRect.Left + 42 + textWidth;
             // Blink cursor
             if ((DateTime.Now.Millisecond / 500) % 2 == 0)
@@ -177,7 +177,7 @@ public class SearchModalRenderer
         {
             AssetCategory cat = (AssetCategory)i;
             string catLabel = categories[i];
-            float labelWidth = _fontSmall.MeasureText(catLabel) + 20;
+            float labelWidth = TextMeasureCache.Instance.MeasureText(catLabel, _fontSmall) + 20;
             var tabRect = new SKRect(tabX, y, tabX + labelWidth, y + 24);
             
             bool isSelected = modal.SelectedCategory == cat;
@@ -253,7 +253,7 @@ public class SearchModalRenderer
                 
                 foreach (var exch in result.Exchanges)
                 {
-                    float exchWidth = _fontExtraSmall.MeasureText(exch) + 8;
+                    float exchWidth = TextMeasureCache.Instance.MeasureText(exch, _fontExtraSmall) + 8;
                     var exchRect = new SKRect(exchangeX, exchangeY - 8, exchangeX + exchWidth, exchangeY + 4);
                     
                     using var exchBg = new SKPaint { Color = new SKColor(40, 45, 55), Style = SKPaintStyle.Fill, IsAntialias = true };
@@ -270,8 +270,9 @@ public class SearchModalRenderer
                 if (result.Price > 0)
                 {
                     string priceText = $"${result.Price:F2}";
-                    float priceWidth = _font.MeasureText(priceText);
+                    float priceWidth = TextMeasureCache.Instance.MeasureText(priceText, _font);
                     canvas.DrawText(priceText, itemRect.Right - 12 - priceWidth, itemRect.MidY - 6, _font, _textPaint);
+                    
                     
                     // Change % with vector arrow
                     SKColor changeColor = result.PercentChange >= 0
@@ -279,7 +280,7 @@ public class SearchModalRenderer
                         : ThemeManager.BearishRed;
 
                     string changeText = $"{Math.Abs(result.PercentChange):F2}%";
-                    float changeWidth = _fontSmall.MeasureText(changeText);
+                    float changeWidth = TextMeasureCache.Instance.MeasureText(changeText, _fontSmall);
 
                     float changeRightX = itemRect.Right - 12;
                     float changeTextX = changeRightX - changeWidth;
@@ -333,7 +334,7 @@ public class SearchModalRenderer
         
         // Hint text at bottom
         string hint = "↑↓ Navigate  •  Enter Select  •  Esc Close";
-        float hintWidth = _fontSmall.MeasureText(hint);
+        float hintWidth = TextMeasureCache.Instance.MeasureText(hint, _fontSmall);
         canvas.DrawText(hint, modalX + (modalWidth - hintWidth) / 2, modalY + modalHeight - 20, _fontSmall, _textPaintSmall);
         
         if (modal.AnimationProgress < 1)

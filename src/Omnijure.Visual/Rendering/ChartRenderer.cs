@@ -128,15 +128,17 @@ public class ChartRenderer
         }
     }
     
-    // NEW: Separated Drawing Logic
+    // NEW: Separated Drawing Logic with Batch Rendering for Performance
     private void DrawCandles(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max)
     {
-        using var greenPaint = new SKPaint { Color = ThemeManager.BullishGreen, IsAntialias = true, Style = SKPaintStyle.Fill };
-        using var redPaint = new SKPaint { Color = ThemeManager.BearishRed, IsAntialias = true, Style = SKPaintStyle.Fill };
-        using var wickPaint = new SKPaint { IsAntialias = true, StrokeWidth = 1 };
+        // OPTIMIZED: Use SKPath batching to reduce draw calls from N*3 to just 3
+        using var bullishPath = new SKPath();
+        using var bearishPath = new SKPath();
+        using var wicksPath = new SKPath();
 
         float halfW = candleWidth * 0.4f;
 
+        // Batch all candles into paths
         for (int i = 0; i < visible; i++)
         {
             int idx = i + offset;
@@ -154,18 +156,28 @@ public class ChartRenderer
             float yHigh = MapPriceToY(c.High, min, max, height);
             float yLow = MapPriceToY(c.Low, min, max, height);
 
-            bool isGreen = c.Close >= c.Open;
-            var paint = isGreen ? greenPaint : redPaint;
-            wickPaint.Color = paint.Color;
+            bool isBullish = c.Close >= c.Open;
 
-            canvas.DrawLine(x, yHigh, x, yLow, wickPaint);
+            // Add wick to shared path
+            wicksPath.MoveTo(x, yHigh);
+            wicksPath.LineTo(x, yLow);
 
+            // Add body to appropriate path
             float rectTop = System.Math.Min(yOpen, yClose);
             float rectBot = System.Math.Max(yOpen, yClose);
             if (System.Math.Abs(rectBot - rectTop) < 1) rectBot = rectTop + 1;
 
-            canvas.DrawRect(x - halfW, rectTop, halfW * 2, rectBot - rectTop, paint);
+            var bodyPath = isBullish ? bullishPath : bearishPath;
+            bodyPath.AddRect(SKRect.Create(x - halfW, rectTop, halfW * 2, rectBot - rectTop));
         }
+
+        // Draw all at once (3 draw calls instead of N*3) - HUGE performance win
+        using var wickPaint = new SKPaint { IsAntialias = true, StrokeWidth = 1, Style = SKPaintStyle.Stroke };
+        wickPaint.Color = ThemeManager.ChartGrid;
+        canvas.DrawPath(wicksPath, wickPaint);
+        
+        canvas.DrawPath(bullishPath, _bullishPaint);
+        canvas.DrawPath(bearishPath, _bearishPaint);
     }
 
     private void DrawLineChart(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max)

@@ -1,5 +1,6 @@
 using SkiaSharp;
 using Omnijure.Core.DataStructures;
+using System;
 
 namespace Omnijure.Visual.Drawing;
 
@@ -10,6 +11,9 @@ namespace Omnijure.Visual.Drawing;
 /// </summary>
 public abstract class DrawingObject
 {
+    private SKPath? _cachedPath;
+    private int _lastHash;
+
     /// <summary>
     /// Color of the drawing
     /// </summary>
@@ -55,17 +59,17 @@ public abstract class DrawingObject
     public abstract bool HitTest(float x, float y, float tolerance);
 
     /// <summary>
-    /// Gets a paint object for this drawing's style
+    /// Gets a paint object for this drawing's style.
+    /// IMPORTANT: Caller must dispose or return to pool after use.
     /// </summary>
     protected SKPaint GetPaint()
     {
-        var paint = new SKPaint
-        {
-            Color = Color,
-            StrokeWidth = IsSelected ? Thickness + 1 : Thickness,
-            Style = SKPaintStyle.Stroke,
-            IsAntialias = true
-        };
+        var paint = Visual.Rendering.PaintPool.Instance.Rent();
+
+        paint.Color = Color;
+        paint.StrokeWidth = IsSelected ? Thickness + 1 : Thickness;
+        paint.Style = SKPaintStyle.Stroke;
+        paint.IsAntialias = true;
 
         // Apply line style
         switch (Style)
@@ -79,6 +83,42 @@ public abstract class DrawingObject
         }
 
         return paint;
+    }
+
+    /// <summary>
+    /// Gets or creates a cached path for this drawing.
+    /// Path is only regenerated when dependencies change.
+    /// </summary>
+    protected SKPath GetOrCreatePath(Func<SKPath> pathFactory, params object[] dependencies)
+    {
+        int currentHash = HashCode.Combine(dependencies);
+
+        if (_cachedPath == null || _lastHash != currentHash)
+        {
+            _cachedPath?.Dispose();
+            _cachedPath = pathFactory();
+            _lastHash = currentHash;
+        }
+
+        return _cachedPath;
+    }
+
+    /// <summary>
+    /// Invalidates the cached path, forcing it to be recreated on next render
+    /// </summary>
+    public void InvalidateCache()
+    {
+        _cachedPath?.Dispose();
+        _cachedPath = null;
+    }
+
+    /// <summary>
+    /// Cleanup cached resources
+    /// </summary>
+    public virtual void Dispose()
+    {
+        _cachedPath?.Dispose();
+        _cachedPath = null;
     }
 
     /// <summary>
@@ -127,25 +167,30 @@ public abstract class DrawingObject
     {
         if (!IsSelected) return;
 
-        using var handlePaint = new SKPaint
-        {
-            Color = SKColors.White,
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true
-        };
+        var handlePaint = Visual.Rendering.PaintPool.Instance.Rent();
+        var borderPaint = Visual.Rendering.PaintPool.Instance.Rent();
 
-        using var borderPaint = new SKPaint
+        try
         {
-            Color = Color,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1,
-            IsAntialias = true
-        };
+            handlePaint.Color = SKColors.White;
+            handlePaint.Style = SKPaintStyle.Fill;
+            handlePaint.IsAntialias = true;
 
-        foreach (var point in points)
+            borderPaint.Color = Color;
+            borderPaint.Style = SKPaintStyle.Stroke;
+            borderPaint.StrokeWidth = 1;
+            borderPaint.IsAntialias = true;
+
+            foreach (var point in points)
+            {
+                canvas.DrawCircle(point, 4, handlePaint);
+                canvas.DrawCircle(point, 4, borderPaint);
+            }
+        }
+        finally
         {
-            canvas.DrawCircle(point, 4, handlePaint);
-            canvas.DrawCircle(point, 4, borderPaint);
+            Visual.Rendering.PaintPool.Instance.Return(handlePaint);
+            Visual.Rendering.PaintPool.Instance.Return(borderPaint);
         }
     }
 }
