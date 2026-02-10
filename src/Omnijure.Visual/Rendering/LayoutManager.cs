@@ -114,38 +114,36 @@ public class LayoutManager
         int screenWidth, int screenHeight)
     {
         // ???????????????????????????????????????????????????????????
-        // ORDEN DE RENDERIZADO (tiling window manager / IDE):
-        //   CAPA 0: Todos los panel backgrounds + chrome (incluyendo chart)
-        //   CAPA 1: Chart content DENTRO del panel (sobre su fondo)
-        //   CAPA 2: Panel content (sidebars, sobre todo)
-        //   CAPA 3: Dock zone preview + dragging panel
+        // ORDEN DE RENDERIZADO:
+        //   CAPA 0: Panel backgrounds + chrome (sin overlay de drag)
+        //   CAPA 1: Chart content DENTRO del panel
+        //   CAPA 2: Panel content (sidebars)
+        //   CAPA 3: Dock zone preview + dragging panel (SOBRE TODO)
         //   CAPA 4: Status bar
+        //   CAPA 5: Window border
         // ???????????????????????????????????????????????????????????
 
-        // CAPA 0: Panel backgrounds + chrome (TODOS, incluyendo center/chart)
+        // CAPA 0: Panel backgrounds + chrome
         _panelSystem.Render(canvas);
 
-        // CAPA 1: Chart content DENTRO del panel ya dibujado
+        // CAPA 1: Chart content
         var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
         bool hasChart = chartPanel != null && !chartPanel.IsClosed;
 
         if (hasChart)
         {
-            // Usar ContentBounds del panel (ya excluye el header del panel)
             var contentArea = chartPanel.ContentBounds;
             
             canvas.Save();
             canvas.ClipRect(contentArea);
             canvas.Translate(contentArea.Left, contentArea.Top);
             
-            // Toolbar dentro del chart
             var toolbarMousePos = new Vector2D<float>(
                 mousePos.X - contentArea.Left, mousePos.Y - contentArea.Top);
             _leftToolbar.Render(canvas, contentArea.Height,
                 drawingState?.ActiveTool ?? Omnijure.Visual.Drawing.DrawingTool.None, 
                 toolbarMousePos.X, toolbarMousePos.Y);
             
-            // Chart (offset por toolbar)
             canvas.Save();
             canvas.Translate(LeftToolbarRenderer.ToolbarWidth, 0);
             canvas.ClipRect(new SKRect(0, 0, 
@@ -169,13 +167,16 @@ public class LayoutManager
             RenderEmptyState(canvas, ChartRect);
         }
 
-        // CAPA 2: Sidebar panel content (SOBRE el chart)
+        // CAPA 2: Sidebar panel content
         RenderPanelContent(canvas, orderBook, trades, buffer);
+
+        // CAPA 3: Dock zone preview + dragging panel (SOBRE CHART Y PANELES)
+        _panelSystem.RenderOverlay(canvas, RenderDraggingPanelContent);
 
         // CAPA 4: Status bar
         _statusBar.Render(canvas, screenWidth, screenHeight);
         
-        // CAPA 5: Window border (1px, respeta paleta)
+        // CAPA 5: Window border
         var windowBorderPaint = PaintPool.Instance.Rent();
         try
         {
@@ -230,39 +231,61 @@ public class LayoutManager
         }
     }
 
+    // Cached references for overlay rendering
+    private OrderBook _lastOrderBook;
+    private RingBuffer<MarketTrade> _lastTrades;
+
     private void RenderPanelContent(SKCanvas canvas, OrderBook orderBook, RingBuffer<MarketTrade> trades, RingBuffer<Candle> buffer)
     {
+        _lastOrderBook = orderBook;
+        _lastTrades = trades;
+        
         foreach (var panel in _panelSystem.Panels)
         {
-            // Skip: cerrados, colapsados, el chart (se renderiza aparte)
             if (panel.IsClosed || panel.IsCollapsed) continue;
             if (panel.Config.Id == PanelDefinitions.CHART) continue;
+            if (_panelSystem.IsPanelBeingDragged(panel)) continue; // Skip — rendered in overlay
 
-            canvas.Save();
-            canvas.ClipRect(panel.ContentBounds);
-            canvas.Translate(panel.ContentBounds.Left, panel.ContentBounds.Top);
-
-            var contentWidth = panel.ContentBounds.Width;
-            var contentHeight = panel.ContentBounds.Height;
-
-            switch (panel.Config.Id)
-            {
-                case PanelDefinitions.ORDERBOOK:
-                    _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, orderBook);
-                    break;
-                case PanelDefinitions.TRADES:
-                    _sidebar.RenderTrades(canvas, contentWidth, contentHeight, trades);
-                    break;
-                case PanelDefinitions.POSITIONS:
-                    _sidebar.RenderPositions(canvas, contentWidth, contentHeight);
-                    break;
-                case PanelDefinitions.ALERTS:
-                    RenderAlertsPanel(canvas, contentWidth, contentHeight);
-                    break;
-            }
-
-            canvas.Restore();
+            RenderSinglePanelContent(canvas, panel);
         }
+    }
+
+    private void RenderSinglePanelContent(SKCanvas canvas, DockablePanel panel)
+    {
+        canvas.Save();
+        canvas.ClipRect(panel.ContentBounds);
+        canvas.Translate(panel.ContentBounds.Left, panel.ContentBounds.Top);
+
+        var contentWidth = panel.ContentBounds.Width;
+        var contentHeight = panel.ContentBounds.Height;
+
+        switch (panel.Config.Id)
+        {
+            case PanelDefinitions.ORDERBOOK:
+                _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, _lastOrderBook);
+                break;
+            case PanelDefinitions.TRADES:
+                _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades);
+                break;
+            case PanelDefinitions.POSITIONS:
+                _sidebar.RenderPositions(canvas, contentWidth, contentHeight);
+                break;
+            case PanelDefinitions.ALERTS:
+                RenderAlertsPanel(canvas, contentWidth, contentHeight);
+                break;
+        }
+
+        canvas.Restore();
+    }
+
+    /// <summary>
+    /// Re-renders dragging panel content on top of the overlay chrome.
+    /// Called by PanelSystem.RenderOverlay via delegate.
+    /// </summary>
+    public void RenderDraggingPanelContent(SKCanvas canvas, DockablePanel panel)
+    {
+        if (panel.Config.Id == PanelDefinitions.CHART) return;
+        RenderSinglePanelContent(canvas, panel);
     }
 
     private void RenderAlertsPanel(SKCanvas canvas, float width, float height)
@@ -286,4 +309,5 @@ public class LayoutManager
     }
 
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
+    public bool IsResizingPanel => _panelSystem.IsResizing;
 }

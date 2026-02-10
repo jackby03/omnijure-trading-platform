@@ -30,7 +30,16 @@ public class PanelSystem
     private const float CollapsedWidth = 32f;
     private const float HandlePadding = 6f;
     private const float DragThreshold = 5f;
-    private const float PanelGap = 2f; // Margen entre paneles (como IDE)
+    private const float PanelGap = 2f;
+    private const float ResizeEdgeWidth = 6f;
+    
+    // Resize state
+    private DockablePanel? _resizingPanel;
+    private ResizeEdge _resizeEdge;
+    private float _resizeStartMousePos;
+    private float _resizeStartSize;
+    
+    private enum ResizeEdge { None, Right, Left, Top, Bottom }
 
     public IReadOnlyCollection<DockablePanel> Panels => _panels.Values;
 
@@ -148,46 +157,50 @@ public class PanelSystem
         );
     }
 
+    /// <summary>
+    /// Phase 1: Panel backgrounds and chrome (BEFORE chart content)
+    /// </summary>
     public void Render(SKCanvas canvas)
     {
-        // ???????????????????????????????????????????????????????????
-        // ORDEN DE RENDERIZADO (de abajo hacia arriba):
-        // 1. Center panel chrome (bordes/título del chart)
-        // 2. Paneles dockeados (Left/Right/Bottom)
-        // 3. Paneles flotantes
-        // 4. Preview de dock zone
-        // 5. Panel arrastrándose
-        // ???????????????????????????????????????????????????????????
-        
-        // CAPA 1: Center panel chrome (bordes, título, handles del chart)
+        // CAPA 1: Center panel chrome
         var centerPanel = _panels.Values.FirstOrDefault(p => p.Position == PanelPosition.Center && !p.IsClosed && p != _draggingPanel);
         if (centerPanel != null)
         {
             RenderPanel(canvas, centerPanel);
         }
         
-        // CAPA 2: Docked panels (Left/Right/Bottom)
+        // CAPA 2: Docked panels (Left/Right/Bottom) - render OVER center
         foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel && !p.IsClosed && p.Position != PanelPosition.Center))
         {
             RenderPanel(canvas, panel);
         }
 
-        // CAPA 3: Floating panels
+        // CAPA 2.5: Resize edge indicators
+        RenderResizeEdges(canvas);
+
+        // CAPA 3: Floating panels (not dragging)
         foreach (var panel in _panels.Values.Where(p => p.IsFloating && p != _draggingPanel && !p.IsClosed))
         {
             RenderPanel(canvas, panel);
         }
+    }
 
-        // CAPA 4: Dock zone preview (SOBRE TODOS)
+    /// <summary>
+    /// Phase 2: Dock preview + dragging panel (AFTER all content, highest z-index)
+    /// </summary>
+    public void RenderOverlay(SKCanvas canvas, Action<SKCanvas, DockablePanel>? renderDraggingContent = null)
+    {
+        // CAPA 6: Dock zone preview
         if (_draggingPanel != null && _currentDockZone != null)
         {
             RenderDockZonePreview(canvas, _currentDockZone);
         }
 
-        // CAPA 5: Dragging panel (z-index máximo)
+        // CAPA 7: Dragging panel (z-index máximo)
         if (_draggingPanel != null)
         {
             RenderDraggingPanel(canvas, _draggingPanel);
+            renderDraggingContent?.Invoke(canvas, _draggingPanel);
         }
     }
 
@@ -429,6 +442,45 @@ public class PanelSystem
         }
     }
 
+    private void RenderResizeEdges(SKCanvas canvas)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            foreach (var panel in _panels.Values.Where(p => !p.IsClosed && !p.IsFloating && !p.IsCollapsed && p.Position != PanelPosition.Center))
+            {
+                var b = panel.Bounds;
+                bool isActive = _resizingPanel == panel;
+                
+                // Determine the edge to highlight
+                SKRect edgeRect = default;
+                switch (panel.Position)
+                {
+                    case PanelPosition.Left:
+                        edgeRect = new SKRect(b.Right - 1, b.Top, b.Right + 1, b.Bottom);
+                        break;
+                    case PanelPosition.Right:
+                        edgeRect = new SKRect(b.Left - 1, b.Top, b.Left + 1, b.Bottom);
+                        break;
+                    case PanelPosition.Bottom:
+                        edgeRect = new SKRect(b.Left, b.Top - 1, b.Right, b.Top + 1);
+                        break;
+                }
+
+                // Hover detection for edge
+                bool isHovered = !isActive && GetResizeEdge(panel, _hoveredPanel != null ? 0 : 0, 0) != ResizeEdge.None;
+                
+                paint.Color = isActive ? new SKColor(70, 140, 255, 180) : new SKColor(50, 55, 65, 100);
+                paint.Style = SKPaintStyle.Fill;
+                canvas.DrawRect(edgeRect, paint);
+            }
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
     private void RenderDraggingPanel(SKCanvas canvas, DockablePanel panel)
     {
         var paint = PaintPool.Instance.Rent();
@@ -528,10 +580,23 @@ public class PanelSystem
 
     public void OnMouseDown(float x, float y)
     {
-        // Guardar posición del mouse para threshold de drag
         _mouseDownPosition = new SKPoint(x, y);
         
-        // Check handles first (priority order)
+        // Check resize edges first
+        foreach (var panel in _panels.Values.Where(p => !p.IsClosed && !p.IsFloating && !p.IsCollapsed && p.Position != PanelPosition.Center))
+        {
+            var edge = GetResizeEdge(panel, x, y);
+            if (edge != ResizeEdge.None)
+            {
+                _resizingPanel = panel;
+                _resizeEdge = edge;
+                _resizeStartMousePos = (edge == ResizeEdge.Right || edge == ResizeEdge.Left) ? x : y;
+                _resizeStartSize = (edge == ResizeEdge.Right || edge == ResizeEdge.Left) ? panel.Width : panel.Height;
+                return;
+            }
+        }
+        
+        // Check handles
         foreach (var panel in _panels.Values.OrderByDescending(p => p.IsFloating))
         {
             if (panel.IsClosed) continue; // ? Ignorar paneles cerrados
@@ -562,6 +627,9 @@ public class PanelSystem
 
     public void OnMouseUp(float x, float y, int screenWidth, int screenHeight)
     {
+        _resizingPanel = null;
+        _resizeEdge = ResizeEdge.None;
+        
         if (_draggingPanel != null)
         {
             if (_currentDockZone != null)
@@ -587,7 +655,30 @@ public class PanelSystem
 
     public void OnMouseMove(float x, float y, int screenWidth, int screenHeight, float headerHeight)
     {
-        // Update hovered panel and handle (solo si no estamos arrastrando)
+        // Handle resize
+        if (_resizingPanel != null)
+        {
+            float delta;
+            if (_resizeEdge == ResizeEdge.Right || _resizeEdge == ResizeEdge.Left)
+            {
+                delta = x - _resizeStartMousePos;
+                if (_resizingPanel.Position == PanelPosition.Left)
+                    _resizingPanel.Width = Math.Clamp(_resizeStartSize + delta, 100, screenWidth * 0.5f);
+                else if (_resizingPanel.Position == PanelPosition.Right)
+                    _resizingPanel.Width = Math.Clamp(_resizeStartSize - delta, 100, screenWidth * 0.5f);
+            }
+            else
+            {
+                delta = y - _resizeStartMousePos;
+                if (_resizingPanel.Position == PanelPosition.Bottom)
+                    _resizingPanel.Height = Math.Clamp(_resizeStartSize - delta, 80, screenHeight * 0.5f);
+                else if (_resizingPanel.Position == PanelPosition.Top)
+                    _resizingPanel.Height = Math.Clamp(_resizeStartSize + delta, 80, screenHeight * 0.5f);
+            }
+            return;
+        }
+        
+        // Update hovered panel and handle
         if (_draggingPanel == null)
         {
             _hoveredPanel = null;
@@ -703,7 +794,39 @@ public class PanelSystem
 
     public bool IsMouseOverPanel(float x, float y) => _panels.Values.Any(p => p.Bounds.Contains(x, y));
     public bool IsDraggingPanel => _draggingPanel != null;
+    public bool IsResizing => _resizingPanel != null;
+    public bool IsPanelBeingDragged(DockablePanel panel) => _draggingPanel == panel;
     public DockablePanel? GetPanel(string panelId) => _panels.GetValueOrDefault(panelId);
+    
+    private ResizeEdge GetResizeEdge(DockablePanel panel, float x, float y)
+    {
+        var b = panel.Bounds;
+        
+        switch (panel.Position)
+        {
+            case PanelPosition.Left:
+                // Right edge of left panel
+                if (x >= b.Right - ResizeEdgeWidth && x <= b.Right + ResizeEdgeWidth && y >= b.Top && y <= b.Bottom)
+                    return ResizeEdge.Right;
+                break;
+            case PanelPosition.Right:
+                // Left edge of right panel
+                if (x >= b.Left - ResizeEdgeWidth && x <= b.Left + ResizeEdgeWidth && y >= b.Top && y <= b.Bottom)
+                    return ResizeEdge.Left;
+                break;
+            case PanelPosition.Bottom:
+                // Top edge of bottom panel
+                if (y >= b.Top - ResizeEdgeWidth && y <= b.Top + ResizeEdgeWidth && x >= b.Left && x <= b.Right)
+                    return ResizeEdge.Top;
+                break;
+            case PanelPosition.Top:
+                // Bottom edge of top panel
+                if (y >= b.Bottom - ResizeEdgeWidth && y <= b.Bottom + ResizeEdgeWidth && x >= b.Left && x <= b.Right)
+                    return ResizeEdge.Bottom;
+                break;
+        }
+        return ResizeEdge.None;
+    }
     
     public void UpdateChartTitle(string symbol, string interval, float price)
     {

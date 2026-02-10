@@ -540,8 +540,8 @@ public static partial class Program
         // Manejar movimiento de paneles (drag & drop)
         _layout.HandleMouseMove(pos.X, pos.Y, deltaX, _window.Size.X, _window.Size.Y);
         
-        // Si está arrastrando panel, bloquear otras interacciones
-        if (_layout.IsDraggingPanel)
+        // Si está arrastrando o redimensionando panel, bloquear otras interacciones
+        if (_layout.IsDraggingPanel || _layout.IsResizingPanel)
         {
             _lastMousePos = _mousePos;
             return;
