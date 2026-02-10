@@ -21,16 +21,16 @@ public class SidebarRenderer
         var typeface = SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold);
         _headerFont = new SKFont(typeface, 14);
         _itemFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 12);
-        
-        _bgPaint = new SKPaint { Color = new SKColor(13, 17, 23), Style = SKPaintStyle.Fill };
-        _headerTextPaint = new SKPaint { Color = SKColors.White, IsAntialias = true };
-        _linePaint = new SKPaint { Color = new SKColor(48, 54, 61), StrokeWidth = 1 };
-        
-        _askPaint = new SKPaint { Color = SKColors.Red.WithAlpha(40), Style = SKPaintStyle.Fill };
-        _bidPaint = new SKPaint { Color = SKColors.Green.WithAlpha(40), Style = SKPaintStyle.Fill };
-        
-        _askTextPaint = new SKPaint { Color = new SKColor(239, 83, 80), IsAntialias = true };
-        _bidTextPaint = new SKPaint { Color = new SKColor(38, 166, 154), IsAntialias = true };
+
+        _bgPaint = new SKPaint { Color = ThemeManager.Background, Style = SKPaintStyle.Fill };
+        _headerTextPaint = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
+        _linePaint = new SKPaint { Color = ThemeManager.Border, StrokeWidth = 1 };
+
+        _askPaint = new SKPaint { Color = ThemeManager.WithAlpha(ThemeManager.BearishRed, 40), Style = SKPaintStyle.Fill };
+        _bidPaint = new SKPaint { Color = ThemeManager.WithAlpha(ThemeManager.BullishGreen, 40), Style = SKPaintStyle.Fill };
+
+        _askTextPaint = new SKPaint { Color = ThemeManager.BearishRed, IsAntialias = true };
+        _bidTextPaint = new SKPaint { Color = ThemeManager.BullishGreen, IsAntialias = true };
     }
 
     public void RenderOrderBook(SKCanvas canvas, float width, float height, OrderBook orderBook)
@@ -92,7 +92,7 @@ public class SidebarRenderer
         
         float y = 60;
         string[] symbols = { "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT" };
-        using var itemTextPaint = new SKPaint { Color = SKColors.LightGray, IsAntialias = true };
+        using var itemTextPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
 
         foreach(var s in symbols)
         {

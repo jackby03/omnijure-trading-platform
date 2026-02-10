@@ -58,6 +58,9 @@ public static class Program
     private static float _viewMinY;
     private static float _viewMaxY;
 
+    // Drawing Tools State
+    private static Omnijure.Visual.Drawing.DrawingToolState _drawingState = new();
+
     public static void Main(string[] args)
     {
         // FIX: ClojureCLR crashes if environment variables have duplicate keys (case-insensitive).
@@ -546,6 +549,14 @@ public static class Program
                 }
             }
 
+            // Check for left toolbar (drawing tools) click
+            var clickedTool = _layout.HandleToolbarClick(_mousePos.X, _mousePos.Y);
+            if (clickedTool.HasValue)
+            {
+                _drawingState.ActiveTool = clickedTool.Value;
+                return;
+            }
+
             _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
             if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
 
@@ -741,7 +752,7 @@ public static class Program
         // ScrollOffset=0 is Latest Candle at Right Edge.
         
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades);
+        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades, _drawingState);
         
         // Render Toolbar (Top)
         _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y);

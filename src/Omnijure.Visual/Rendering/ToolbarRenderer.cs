@@ -23,28 +23,28 @@ public class ToolbarRenderer
     public ToolbarRenderer()
     {
         // Modern gradient background
-        _gradientPaint = new SKPaint 
-        { 
+        _gradientPaint = new SKPaint
+        {
             Shader = SKShader.CreateLinearGradient(
                 new SKPoint(0, 0),
                 new SKPoint(0, 50),
-                new[] { new SKColor(25, 30, 40), new SKColor(15, 18, 25) },
+                new[] { ThemeManager.Surface, ThemeManager.Background },
                 SKShaderTileMode.Clamp
             ),
             Style = SKPaintStyle.Fill
         };
-        
-        _textPaint = new SKPaint { Color = new SKColor(220, 220, 220), IsAntialias = true };
-        _textPaintLarge = new SKPaint { Color = SKColors.White, IsAntialias = true };
-        _btnFill = new SKPaint { Color = new SKColor(45, 52, 65), Style = SKPaintStyle.Fill };
-        _btnHover = new SKPaint { Color = new SKColor(60, 70, 85), Style = SKPaintStyle.Fill };
-        _dropdownBg = new SKPaint { Color = new SKColor(30, 35, 45), Style = SKPaintStyle.Fill };
-        _searchBoxBg = new SKPaint { Color = new SKColor(35, 40, 50), Style = SKPaintStyle.Fill };
-        _searchBoxFocused = new SKPaint { Color = new SKColor(45, 52, 65), Style = SKPaintStyle.Fill };
-        _shadowPaint = new SKPaint 
-        { 
-            Color = new SKColor(0, 0, 0, 80), 
-            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 4) 
+
+        _textPaint = new SKPaint { Color = ThemeManager.TextPrimary, IsAntialias = true };
+        _textPaintLarge = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
+        _btnFill = new SKPaint { Color = ThemeManager.ButtonDefault, Style = SKPaintStyle.Fill };
+        _btnHover = new SKPaint { Color = ThemeManager.ButtonHover, Style = SKPaintStyle.Fill };
+        _dropdownBg = new SKPaint { Color = ThemeManager.SurfaceElevated, Style = SKPaintStyle.Fill };
+        _searchBoxBg = new SKPaint { Color = ThemeManager.Surface, Style = SKPaintStyle.Fill };
+        _searchBoxFocused = new SKPaint { Color = ThemeManager.ButtonDefault, Style = SKPaintStyle.Fill };
+        _shadowPaint = new SKPaint
+        {
+            Color = ThemeManager.ShadowMedium,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 4)
         };
         
         _font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 13);
@@ -75,13 +75,13 @@ public class ToolbarRenderer
             canvas.DrawRoundRect(searchRect, 6, 6, searchBox.IsFocused ? _searchBoxFocused : _searchBoxBg);
             
             // Search icon
-            using var iconPaint = new SKPaint { Color = new SKColor(150, 150, 150), IsAntialias = true };
+            using var iconPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
             canvas.DrawText("🔍", searchRect.Left + 10, searchRect.MidY + 5, _font, iconPaint);
             
             // Text or placeholder
             string displayText = string.IsNullOrEmpty(searchBox.Text) ? searchBox.Placeholder : searchBox.Text;
             using var textPaint = string.IsNullOrEmpty(searchBox.Text) 
-                ? new SKPaint { Color = new SKColor(120, 120, 120), IsAntialias = true }
+                ? new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true }
                 : _textPaint;
             
             canvas.DrawText(displayText, searchRect.Left + 35, searchRect.MidY + 5, _font, textPaint);
@@ -97,7 +97,7 @@ public class ToolbarRenderer
             if (!string.IsNullOrEmpty(searchBox.Text))
             {
                 var clearRect = new SKRect(searchRect.Right - 30, searchRect.Top + 7, searchRect.Right - 7, searchRect.Bottom - 7);
-                canvas.DrawCircle(clearRect.MidX, clearRect.MidY, 10, new SKPaint { Color = new SKColor(60, 60, 60), Style = SKPaintStyle.Fill });
+                canvas.DrawCircle(clearRect.MidX, clearRect.MidY, 10, new SKPaint { Color = ThemeManager.Border, Style = SKPaintStyle.Fill });
                 canvas.DrawText("×", clearRect.MidX - 4, clearRect.MidY + 5, _font, _textPaint);
             }
             
@@ -128,7 +128,7 @@ public class ToolbarRenderer
                     string changeText = $"{arrow} {Math.Abs(assetDd.PercentChange):F2}%";
                     using var changePaint = new SKPaint 
                     { 
-                        Color = assetDd.PercentChange >= 0 ? new SKColor(0, 200, 100) : new SKColor(255, 80, 80),
+                        Color = assetDd.PercentChange >= 0 ? ThemeManager.Success : ThemeManager.Error,
                         IsAntialias = true 
                     };
                     canvas.DrawText(changeText, x, y + 11, _font, changePaint);
@@ -136,7 +136,7 @@ public class ToolbarRenderer
                 }
                 
                 // Separator
-                canvas.DrawLine(x, y + 5, x, y + itemH - 5, new SKPaint { Color = new SKColor(60, 60, 60), StrokeWidth = 1 });
+                canvas.DrawLine(x, y + 5, x, y + itemH - 5, new SKPaint { Color = ThemeManager.Border, StrokeWidth = 1 });
                 x += 20;
             }
         }
@@ -224,7 +224,7 @@ public class ToolbarRenderer
             float scrollThumbY = (dd.ScrollOffset / (float)filtered.Count) * scrollTrackH;
             
             var thumbRect = new SKRect(dd.Rect.Right - 8, dd.Rect.Bottom + 5 + scrollThumbY, dd.Rect.Right - 3, dd.Rect.Bottom + 5 + scrollThumbY + scrollThumbH);
-            using var scrollPaint = new SKPaint { Color = new SKColor(120, 120, 120), Style = SKPaintStyle.Fill };
+            using var scrollPaint = new SKPaint { Color = ThemeManager.TextMuted, Style = SKPaintStyle.Fill };
             canvas.DrawRoundRect(thumbRect, 2, 2, scrollPaint);
         }
         

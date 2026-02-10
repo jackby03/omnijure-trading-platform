@@ -12,25 +12,28 @@ public class LayoutManager
     public float RightSidebarWidth { get; private set; } = 300;
     private const float MinSidebarWidth = 100;
     private const float DividerWidth = 6;
-    
+
     // Bounds
     public SKRect HeaderRect { get; private set; }
     public SKRect LeftSidebarRect { get; private set; }
+    public SKRect LeftToolbarRect { get; private set; }  // Drawing tools toolbar
     public SKRect ChartRect { get; private set; }
     public SKRect RightSidebarRect { get; private set; }
     public SKRect DividerLeftRect { get; private set; }
     public SKRect DividerRightRect { get; private set; }
-    
+
     // State
     public bool IsResizingLeft { get; private set; }
     public bool IsResizingRight { get; private set; }
-    
+
     // Renderers
     private readonly SidebarRenderer _sidebar;
+    private readonly LeftToolbarRenderer _leftToolbar;
     
     public LayoutManager()
     {
         _sidebar = new SidebarRenderer();
+        _leftToolbar = new LeftToolbarRenderer();
     }
     
     public void UpdateLayout(int width, int height)
@@ -65,9 +68,13 @@ public class LayoutManager
         
         // 4. Right Divider
         DividerRightRect = new SKRect(width - RightSidebarWidth - DividerWidth, HeaderHeight, width - RightSidebarWidth, height);
-        
-        // 5. Center Chart
-        ChartRect = new SKRect(LeftSidebarWidth + DividerWidth, HeaderHeight, width - RightSidebarWidth - DividerWidth, height);
+
+        // 5. Left Toolbar (Drawing Tools) - Inside chart area
+        float chartStartX = LeftSidebarWidth + DividerWidth;
+        LeftToolbarRect = new SKRect(chartStartX, HeaderHeight, chartStartX + LeftToolbarRenderer.ToolbarWidth, height);
+
+        // 6. Center Chart (adjusted for left toolbar)
+        ChartRect = new SKRect(chartStartX + LeftToolbarRenderer.ToolbarWidth, HeaderHeight, width - RightSidebarWidth - DividerWidth, height);
     }
     
     public void HandleMouseDown(float x, float y)
@@ -95,15 +102,35 @@ public class LayoutManager
     }
     
     public bool IsMouseOverDivider(float x, float y) => DividerLeftRect.Contains(x,y) || DividerRightRect.Contains(x,y);
+
+    /// <summary>
+    /// Handles clicks on the left toolbar for tool selection
+    /// </summary>
+    public Omnijure.Visual.Drawing.DrawingTool? HandleToolbarClick(float x, float y)
+    {
+        if (LeftToolbarRect.Contains(x, y))
+        {
+            float localX = x - LeftToolbarRect.Left;
+            float localY = y - LeftToolbarRect.Top;
+            return _leftToolbar.GetToolAtPosition(localX, localY);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if mouse is over the left toolbar
+    /// </summary>
+    public bool IsMouseOverToolbar(float x, float y) => LeftToolbarRect.Contains(x, y);
     
-    public void Render(SKCanvas canvas, ChartRenderer renderer, 
-        Omnijure.Core.DataStructures.RingBuffer<Omnijure.Core.DataStructures.Candle> buffer, 
-        string decision, int scrollOffset, float zoom, 
-        string symbol, string interval, ChartType chartType, 
+    public void Render(SKCanvas canvas, ChartRenderer renderer,
+        Omnijure.Core.DataStructures.RingBuffer<Omnijure.Core.DataStructures.Candle> buffer,
+        string decision, int scrollOffset, float zoom,
+        string symbol, string interval, ChartType chartType,
         System.Collections.Generic.List<UiButton> buttons,
         float minPrice, float maxPrice, Vector2D<float> mousePos,
         Omnijure.Core.DataStructures.OrderBook orderBook,
-        Omnijure.Core.DataStructures.RingBuffer<Omnijure.Core.DataStructures.MarketTrade> trades)
+        Omnijure.Core.DataStructures.RingBuffer<Omnijure.Core.DataStructures.MarketTrade> trades,
+        Omnijure.Visual.Drawing.DrawingToolState drawingState)
     {
         using var divPaint = new SKPaint { Color = new SKColor(30,30,30), Style = SKPaintStyle.Fill };
         using var activeDivPaint = new SKPaint { Color = SKColors.Blue, Style = SKPaintStyle.Fill };
@@ -125,8 +152,16 @@ public class LayoutManager
         canvas.Translate(RightSidebarRect.Left, RightSidebarRect.Top);
         _sidebar.RenderRightSidebar(canvas, RightSidebarRect.Width, RightSidebarRect.Height, trades);
         canvas.Restore();
-        
-        // 4. Draw Chart
+
+        // 4. Draw Left Toolbar (Drawing Tools)
+        canvas.Save();
+        canvas.ClipRect(LeftToolbarRect);
+        canvas.Translate(LeftToolbarRect.Left, LeftToolbarRect.Top);
+        var toolbarLocalMouse = new Vector2D<float>(mousePos.X - LeftToolbarRect.Left, mousePos.Y - LeftToolbarRect.Top);
+        _leftToolbar.Render(canvas, LeftToolbarRect.Height, drawingState.ActiveTool, toolbarLocalMouse.X, toolbarLocalMouse.Y);
+        canvas.Restore();
+
+        // 5. Draw Chart
         canvas.Save();
         canvas.ClipRect(ChartRect);
         canvas.Translate(ChartRect.Left, ChartRect.Top);

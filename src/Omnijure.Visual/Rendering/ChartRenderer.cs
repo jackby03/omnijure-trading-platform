@@ -16,15 +16,15 @@ public class ChartRenderer
     {
         _checkeredPaint = new SKPaint
         {
-            Color = SKColors.DarkGray.WithAlpha(50),
+            Color = ThemeManager.WithAlpha(ThemeManager.TextMuted, 50),
             IsAntialias = false
         };
 
-        _bullishPaint = new SKPaint { Color = SKColors.Green, IsAntialias = true, Style = SKPaintStyle.Fill };
-        _bearishPaint = new SKPaint { Color = SKColors.Red, IsAntialias = true, Style = SKPaintStyle.Fill };
+        _bullishPaint = new SKPaint { Color = ThemeManager.BullishGreen, IsAntialias = true, Style = SKPaintStyle.Fill };
+        _bearishPaint = new SKPaint { Color = ThemeManager.BearishRed, IsAntialias = true, Style = SKPaintStyle.Fill };
 
         // Subtle grid like TradingView - low opacity for better readability
-        _gridPaint = new SKPaint { Color = new SKColor(48, 54, 61, 40), IsAntialias = false, StrokeWidth = 1 };
+        _gridPaint = new SKPaint { Color = ThemeManager.WithAlpha(ThemeManager.ChartGrid, 40), IsAntialias = false, StrokeWidth = 1 };
     }
 
     // Render method...
@@ -42,7 +42,7 @@ public class ChartRenderer
         int totalChartH = height - BottomAxisHeight;
         
         // Clear
-        using var bgPaint = new SKPaint { Color = new SKColor(13, 17, 23) };
+        using var bgPaint = new SKPaint { Color = ThemeManager.ChartBackground };
         canvas.DrawRect(0, 0, width, height, bgPaint);
 
         if (buffer.Count == 0 && scrollOffset >= 0) {
@@ -74,6 +74,9 @@ public class ChartRenderer
 
         // Draw indicators (SMA lines like TradingView)
         DrawIndicators(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice);
+
+        // Draw chart legend (TradingView-style indicator values)
+        DrawChartLegend(canvas, buffer, symbol, interval, visibleCandles, scrollOffset);
 
         // CROSSHAIR LINES (Inside Main Chart Clip)
         bool isHoverChart = mousePos.X >= 0 && mousePos.X <= chartW && mousePos.Y >= 0 && mousePos.Y <= mainChartH;
@@ -113,8 +116,8 @@ public class ChartRenderer
     // NEW: Separated Drawing Logic
     private void DrawCandles(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max)
     {
-        using var greenPaint = new SKPaint { Color = new SKColor(38, 166, 154), IsAntialias = true, Style = SKPaintStyle.Fill };
-        using var redPaint = new SKPaint { Color = new SKColor(239, 83, 80), IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var greenPaint = new SKPaint { Color = ThemeManager.BullishGreen, IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var redPaint = new SKPaint { Color = ThemeManager.BearishRed, IsAntialias = true, Style = SKPaintStyle.Fill };
         using var wickPaint = new SKPaint { IsAntialias = true, StrokeWidth = 1 };
 
         float halfW = candleWidth * 0.4f;
@@ -152,7 +155,7 @@ public class ChartRenderer
 
     private void DrawLineChart(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max)
     {
-        using var linePaint = new SKPaint { Color = SKColors.Cyan, Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true };
+        using var linePaint = new SKPaint { Color = ThemeManager.Primary, Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true };
         using var path = new SKPath();
         
         bool started = false;
@@ -181,12 +184,12 @@ public class ChartRenderer
     private void DrawPriceAxis(SKCanvas canvas, int chartW, int chartH, int totalW, int totalH, float minPrice, float maxPrice)
     {
         // Draw Axis Background
-        using var bgPaint = new SKPaint { Color = new SKColor(22, 27, 34), Style = SKPaintStyle.Fill };
+        using var bgPaint = new SKPaint { Color = ThemeManager.Surface, Style = SKPaintStyle.Fill };
         canvas.DrawRect(chartW, 0, totalW - chartW, totalH, bgPaint); // Right strip
 
-        using var linePaint = new SKPaint { Color = new SKColor(48, 54, 61), StrokeWidth = 1 };
+        using var linePaint = new SKPaint { Color = ThemeManager.Border, StrokeWidth = 1 };
         using var font = new SKFont(SKTypeface.Default, 11);
-        using var textPaint = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
+        using var textPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
 
         float range = maxPrice - minPrice;
         if (range <= 0) return;
@@ -229,7 +232,7 @@ public class ChartRenderer
         // Draw horizontal line across chart (like TradingView)
         using var linePaint = new SKPaint
         {
-            Color = isGreen ? new SKColor(38, 166, 154) : new SKColor(239, 83, 80),
+            Color = isGreen ? ThemeManager.BullishGreen : ThemeManager.BearishRed,
             StrokeWidth = 1,
             PathEffect = SKPathEffect.CreateDash(new float[] { 4, 4 }, 0)
         };
@@ -242,10 +245,10 @@ public class ChartRenderer
 
         using var boxPaint = new SKPaint
         {
-            Color = isGreen ? new SKColor(38, 166, 154) : new SKColor(239, 83, 80),
+            Color = isGreen ? ThemeManager.BullishGreen : ThemeManager.BearishRed,
             Style = SKPaintStyle.Fill
         };
-        using var textPaint = new SKPaint { Color = SKColors.White, IsAntialias = true };
+        using var textPaint = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
 
         float boxHeight = 18;
         SKRect priceBox = new SKRect(chartW, y - boxHeight / 2, chartW + labelWidth + 16, y + boxHeight / 2);
@@ -255,9 +258,9 @@ public class ChartRenderer
 
     private void DrawTimeAxis(SKCanvas canvas, int chartW, int chartH, RingBuffer<Candle> buffer, int scrollOffset, int visibleCandles, float candleWidth, string interval)
     {
-        using var linePaint = new SKPaint { Color = new SKColor(48, 54, 61), StrokeWidth = 1 };
+        using var linePaint = new SKPaint { Color = ThemeManager.Border, StrokeWidth = 1 };
         using var font = new SKFont(SKTypeface.Default, 11);
-        using var textPaint = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
+        using var textPaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
 
         if (buffer.Count == 0 && scrollOffset >= 0) return;
 
@@ -310,10 +313,10 @@ public class ChartRenderer
         if (buffer.Count < 50) return; // Need enough data for indicators
 
         // SMA 20 (Yellow line)
-        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 20, new SKColor(255, 200, 50));
+        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 20, ThemeManager.Indicator20);
 
         // SMA 50 (Cyan line)
-        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 50, new SKColor(100, 200, 255));
+        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 50, ThemeManager.Indicator50);
     }
 
     private void DrawSMA(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max, int period, SKColor color)
@@ -372,12 +375,12 @@ public class ChartRenderer
         if (maxVolume == 0) return;
 
         // Draw separator line
-        using var separatorPaint = new SKPaint { Color = new SKColor(48, 54, 61), StrokeWidth = 1 };
+        using var separatorPaint = new SKPaint { Color = ThemeManager.Divider, StrokeWidth = 1 };
         canvas.DrawLine(0, yOffset, chartW, yOffset, separatorPaint);
 
         // Draw volume bars
-        using var greenVolPaint = new SKPaint { Color = new SKColor(38, 166, 154, 100), Style = SKPaintStyle.Fill };
-        using var redVolPaint = new SKPaint { Color = new SKColor(239, 83, 80, 100), Style = SKPaintStyle.Fill };
+        using var greenVolPaint = new SKPaint { Color = ThemeManager.VolumeBullish, Style = SKPaintStyle.Fill };
+        using var redVolPaint = new SKPaint { Color = ThemeManager.VolumeBearish, Style = SKPaintStyle.Fill };
 
         float barWidth = candleWidth * 0.8f;
 
@@ -403,8 +406,87 @@ public class ChartRenderer
 
         // Draw volume label
         using var font = new SKFont(SKTypeface.Default, 10);
-        using var textPaint = new SKPaint { Color = new SKColor(128, 128, 128), IsAntialias = true };
+        using var textPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
         canvas.DrawText("Volume", 5, yOffset + 15, font, textPaint);
+    }
+
+    private void DrawChartLegend(SKCanvas canvas, RingBuffer<Candle> buffer, string symbol, string interval, int visibleCandles, int scrollOffset)
+    {
+        if (buffer.Count == 0) return;
+
+        float x = 10;
+        float y = 10;
+        float lineHeight = 20;
+
+        // Semi-transparent background
+        using var bgPaint = new SKPaint
+        {
+            Color = ThemeManager.WithAlpha(ThemeManager.Surface, 200),
+            Style = SKPaintStyle.Fill
+        };
+
+        // Calculate legend size
+        float legendWidth = 280;
+        float legendHeight = 90;
+        canvas.DrawRoundRect(new SKRect(x, y, x + legendWidth, y + legendHeight),
+            ThemeManager.BorderRadiusSmall, ThemeManager.BorderRadiusSmall, bgPaint);
+
+        x += 10;
+        y += 18;
+
+        using var fontBold = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 14);
+        using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 12);
+
+        // Symbol and current price
+        float currentPrice = buffer[0].Close;
+        float prevPrice = buffer.Count > 1 ? buffer[1].Close : currentPrice;
+        bool isGreen = currentPrice >= prevPrice;
+        float change = prevPrice != 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+
+        string arrow = isGreen ? "▲" : "▼";
+        SKColor priceColor = isGreen ? ThemeManager.Success : ThemeManager.Error;
+
+        string header = $"{symbol}  {currentPrice:F2} {arrow}{Math.Abs(change):F2}%";
+        using var headerPaint = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
+        canvas.DrawText(header, x, y, fontBold, headerPaint);
+
+        y += lineHeight;
+
+        // SMA 20
+        if (buffer.Count >= 20)
+        {
+            float sma20 = CalculateSMAValue(buffer, 20, scrollOffset);
+            using var sma20Paint = new SKPaint { Color = ThemeManager.Indicator20, IsAntialias = true };
+            canvas.DrawText($"━ SMA(20): {sma20:F2}", x, y, font, sma20Paint);
+            y += lineHeight;
+        }
+
+        // SMA 50
+        if (buffer.Count >= 50)
+        {
+            float sma50 = CalculateSMAValue(buffer, 50, scrollOffset);
+            using var sma50Paint = new SKPaint { Color = ThemeManager.Indicator50, IsAntialias = true };
+            canvas.DrawText($"━ SMA(50): {sma50:F2}", x, y, font, sma50Paint);
+            y += lineHeight;
+        }
+
+        // Interval info
+        using var mutedPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+        canvas.DrawText($"{interval} • {visibleCandles} candles", x, y, font, mutedPaint);
+    }
+
+    private float CalculateSMAValue(RingBuffer<Candle> buffer, int period, int scrollOffset)
+    {
+        // Calculate SMA for the most recent visible candle
+        int startIdx = scrollOffset;
+        if (startIdx < 0 || startIdx + period > buffer.Count) return 0;
+
+        float sum = 0;
+        for (int i = 0; i < period; i++)
+        {
+            sum += buffer[startIdx + i].Close;
+        }
+        return sum / period;
     }
 
     private void DrawGrid(SKCanvas canvas, int chartW, int chartH, float minPrice, float maxPrice, int visibleCandles, float candleWidth, string interval, RingBuffer<Candle> buffer, int scrollOffset)
@@ -468,13 +550,13 @@ public class ChartRenderer
     private void DrawHeader(SKCanvas canvas, int count, string symbol, string interval, float price, float highDay, string decision, System.Collections.Generic.List<UiButton> buttons)
     {
         // HEADER BAR Background
-        using var barPaint = new SKPaint { Color = new SKColor(20, 22, 28), Style = SKPaintStyle.Fill };
+        using var barPaint = new SKPaint { Color = ThemeManager.Background, Style = SKPaintStyle.Fill };
         canvas.DrawRect(0, 0, canvas.DeviceClipBounds.Width, 50, barPaint);
-        
+
         // Draw UI Buttons
-        using var btnFill = new SKPaint { Color = new SKColor(40, 44, 52), Style = SKPaintStyle.Fill };
-        using var btnHover = new SKPaint { Color = new SKColor(60, 64, 72), Style = SKPaintStyle.Fill };
-        using var textPaint = new SKPaint { Color = SKColors.White, TextSize = 14, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Segoe UI") };
+        using var btnFill = new SKPaint { Color = ThemeManager.ButtonDefault, Style = SKPaintStyle.Fill };
+        using var btnHover = new SKPaint { Color = ThemeManager.ButtonHover, Style = SKPaintStyle.Fill };
+        using var textPaint = new SKPaint { Color = ThemeManager.TextWhite, TextSize = 14, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Segoe UI") };
 
         if (buttons != null)
         {
@@ -491,7 +573,7 @@ public class ChartRenderer
         }
         
         // PRICE
-        SKColor priceColor = SKColors.White;
+        SKColor priceColor = ThemeManager.TextWhite;
         using var pricePaint = new SKPaint { Color = priceColor, TextSize = 16, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Consolas", SKFontStyle.Bold) };
         canvas.DrawText(price.ToString("F2") + " " + symbol, canvas.DeviceClipBounds.Width - 300, 30, pricePaint);
     }
@@ -510,8 +592,8 @@ public class ChartRenderer
         // Conceptual: Identifying pivots. For visual demo, we simulate OBs based on local extrema.
         float candleWidth = width / visible;
         
-        using var obBullish = new SKPaint { Color = SKColors.Green.WithAlpha(50), Style = SKPaintStyle.Fill };
-        using var obBearish = new SKPaint { Color = SKColors.Red.WithAlpha(50), Style = SKPaintStyle.Fill };
+        using var obBullish = new SKPaint { Color = ThemeManager.WithAlpha(ThemeManager.BullishGreen, 50), Style = SKPaintStyle.Fill };
+        using var obBearish = new SKPaint { Color = ThemeManager.WithAlpha(ThemeManager.BearishRed, 50), Style = SKPaintStyle.Fill };
 
         for (int i = 5; i < visible - 5; i++)
         {
@@ -543,12 +625,12 @@ public class ChartRenderer
     }
     private void DrawCrosshairLines(SKCanvas canvas, float x, float y, int w, int h)
     {
-        using var paint = new SKPaint 
-        { 
-            Color = SKColors.Gray, 
-            Style = SKPaintStyle.Stroke, 
-            StrokeWidth = 1, 
-            PathEffect = SKPathEffect.CreateDash(new float[] { 4, 4 }, 0) 
+        using var paint = new SKPaint
+        {
+            Color = ThemeManager.Crosshair,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 1,
+            PathEffect = SKPathEffect.CreateDash(new float[] { 4, 4 }, 0)
         };
         
         // Horizontal

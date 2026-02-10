@@ -27,58 +27,58 @@ public class SearchModalRenderer
 
     public SearchModalRenderer()
     {
-        _overlayPaint = new SKPaint 
-        { 
-            Color = new SKColor(0, 0, 0, 200), 
-            Style = SKPaintStyle.Fill 
+        _overlayPaint = new SKPaint
+        {
+            Color = ThemeManager.WithAlpha(ThemeManager.Background, 200),
+            Style = SKPaintStyle.Fill
         };
-        
-        _modalBg = new SKPaint 
-        { 
-            Color = new SKColor(20, 23, 28), // Darker, more professional
-            Style = SKPaintStyle.Fill 
+
+        _modalBg = new SKPaint
+        {
+            Color = ThemeManager.Background,
+            Style = SKPaintStyle.Fill
         };
-        
-        _searchBoxBg = new SKPaint 
-        { 
-            Color = new SKColor(30, 34, 40), 
-            Style = SKPaintStyle.Fill 
+
+        _searchBoxBg = new SKPaint
+        {
+            Color = ThemeManager.Surface,
+            Style = SKPaintStyle.Fill
         };
-        
-        _searchBoxBorder = new SKPaint 
-        { 
-            Color = new SKColor(50, 55, 65), 
+
+        _searchBoxBorder = new SKPaint
+        {
+            Color = ThemeManager.Border,
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 1,
             IsAntialias = true
         };
-        
-        _textPaint = new SKPaint { Color = new SKColor(200, 205, 210), IsAntialias = true };
-        _textPaintLarge = new SKPaint { Color = new SKColor(240, 245, 250), IsAntialias = true };
-        _textPaintSmall = new SKPaint { Color = new SKColor(130, 135, 145), IsAntialias = true };
-        _textPaintDim = new SKPaint { Color = new SKColor(90, 95, 105), IsAntialias = true };
-        
-        _selectedBg = new SKPaint 
-        { 
-            Color = new SKColor(40, 50, 65), // Subtle blue-gray
-            Style = SKPaintStyle.Fill 
+
+        _textPaint = new SKPaint { Color = ThemeManager.TextPrimary, IsAntialias = true };
+        _textPaintLarge = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
+        _textPaintSmall = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
+        _textPaintDim = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+
+        _selectedBg = new SKPaint
+        {
+            Color = ThemeManager.ButtonActive,
+            Style = SKPaintStyle.Fill
         };
-        
-        _hoverBg = new SKPaint 
-        { 
-            Color = new SKColor(32, 36, 42), 
-            Style = SKPaintStyle.Fill 
+
+        _hoverBg = new SKPaint
+        {
+            Color = ThemeManager.SurfaceHover,
+            Style = SKPaintStyle.Fill
         };
-        
-        _shadowPaint = new SKPaint 
-        { 
-            Color = new SKColor(0, 0, 0, 150), 
-            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 12) 
+
+        _shadowPaint = new SKPaint
+        {
+            Color = ThemeManager.ShadowStrong,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 12)
         };
-        
-        _separatorPaint = new SKPaint 
-        { 
-            Color = new SKColor(40, 45, 52), 
+
+        _separatorPaint = new SKPaint
+        {
+            Color = ThemeManager.Divider,
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 1
         };
@@ -183,9 +183,9 @@ public class SearchModalRenderer
             bool isSelected = modal.SelectedCategory == cat;
             if (isSelected)
             {
-                using var p = new SKPaint { Color = SKColors.White, Style = SKPaintStyle.Fill, IsAntialias = true };
+                using var p = new SKPaint { Color = ThemeManager.TextWhite, Style = SKPaintStyle.Fill, IsAntialias = true };
                 canvas.DrawRoundRect(tabRect, 12, 12, p);
-                using var tp = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+                using var tp = new SKPaint { Color = ThemeManager.Background, IsAntialias = true };
                 canvas.DrawText(catLabel, tabRect.Left + 10, tabRect.MidY + 4, _fontSmall, tp);
             }
             else
