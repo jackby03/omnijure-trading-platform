@@ -9,7 +9,8 @@ public class ChartRenderer
     private readonly SKPaint _checkeredPaint;
     private readonly SKPaint _bullishPaint;
     private readonly SKPaint _bearishPaint;
-    
+    private readonly SKPaint _gridPaint;
+
     // Performance: Allocate paints once
     public ChartRenderer()
     {
@@ -18,21 +19,27 @@ public class ChartRenderer
             Color = SKColors.DarkGray.WithAlpha(50),
             IsAntialias = false
         };
-        
+
         _bullishPaint = new SKPaint { Color = SKColors.Green, IsAntialias = true, Style = SKPaintStyle.Fill };
         _bearishPaint = new SKPaint { Color = SKColors.Red, IsAntialias = true, Style = SKPaintStyle.Fill };
+
+        // Subtle grid like TradingView - low opacity for better readability
+        _gridPaint = new SKPaint { Color = new SKColor(48, 54, 61, 40), IsAntialias = false, StrokeWidth = 1 };
     }
 
     // Render method...
 
     public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice, Vector2D<float> mousePos)
     {
-        // 1. Layout Margins
+        // 1. Layout Margins (TradingView style with volume panel)
         const int RightAxisWidth = 60;
         const int BottomAxisHeight = 30;
-        
+        const int VolumeHeight = 80;  // Volume panel height
+
         int chartW = width - RightAxisWidth;
-        int chartH = height - BottomAxisHeight;
+        int mainChartH = height - BottomAxisHeight - VolumeHeight;
+        int volumeChartH = VolumeHeight;
+        int totalChartH = height - BottomAxisHeight;
         
         // Clear
         using var bgPaint = new SKPaint { Color = new SKColor(13, 17, 23) };
@@ -44,42 +51,62 @@ public class ChartRenderer
         }
 
         // 2. Metrics
-        int baseView = 150;
-        int visibleCandles = (int)(baseView / zoom);
-        if (visibleCandles < 10) visibleCandles = 10; 
+        // Candle width is now the primary driver of zoom, rather than a fixed count per screen.
+        float baseCandleWidth = 8.0f;
+        float candleWidth = baseCandleWidth * zoom;
+        if (candleWidth < 1.0f) candleWidth = 1.0f; // Minimum width
         
-        float candleWidth = (float)chartW / visibleCandles;
+        int visibleCandles = (int)Math.Ceiling(chartW / candleWidth);
+        if (visibleCandles < 2) visibleCandles = 2; 
         
-        // 3. Grid & Axes (Clipped Content)
+        // 3. Main Chart - Grid & Candles (Clipped Content)
         canvas.Save();
-        canvas.ClipRect(new SKRect(0, 0, chartW, chartH));
-        
-        DrawGrid(canvas, chartW, chartH, minPrice, maxPrice, visibleCandles, candleWidth, interval);
-        
+        canvas.ClipRect(new SKRect(0, 0, chartW, mainChartH));
+
+        DrawGrid(canvas, chartW, mainChartH, minPrice, maxPrice, visibleCandles, candleWidth, interval, buffer, scrollOffset);
+
         switch(chartType)
         {
-            case ChartType.Candles: DrawCandles(canvas, buffer, visibleCandles, scrollOffset, candleWidth, chartH, minPrice, maxPrice); break;
-            case ChartType.Line: DrawLineChart(canvas, buffer, visibleCandles, scrollOffset, candleWidth, chartH, minPrice, maxPrice); break;
-            case ChartType.Area: DrawAreaChart(canvas, buffer, visibleCandles, scrollOffset, candleWidth, chartH, minPrice, maxPrice); break;
+            case ChartType.Candles: DrawCandles(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice); break;
+            case ChartType.Line: DrawLineChart(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice); break;
+            case ChartType.Area: DrawAreaChart(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice); break;
         }
-        
-        // CROSSHAIR LINES (Inside Chart Clip)
-        bool isHoverChart = mousePos.X >= 0 && mousePos.X <= chartW && mousePos.Y >= 0 && mousePos.Y <= chartH;
+
+        // Draw indicators (SMA lines like TradingView)
+        DrawIndicators(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice);
+
+        // CROSSHAIR LINES (Inside Main Chart Clip)
+        bool isHoverChart = mousePos.X >= 0 && mousePos.X <= chartW && mousePos.Y >= 0 && mousePos.Y <= mainChartH;
         if (isHoverChart)
         {
-             DrawCrosshairLines(canvas, mousePos.X, mousePos.Y, chartW, chartH);
+             DrawCrosshairLines(canvas, mousePos.X, mousePos.Y, chartW, mainChartH);
         }
-        
-        canvas.Restore(); // End Clip
-        
+
+        canvas.Restore(); // End Main Chart Clip
+
+        // 4. Volume Panel (TradingView style)
+        canvas.Save();
+        canvas.ClipRect(new SKRect(0, mainChartH, chartW, totalChartH));
+        DrawVolumePanel(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, volumeChartH, chartW);
+        canvas.Restore(); // End Volume Clip
+
         // 5. Draw Axes (Outside Clip)
-        DrawPriceAxis(canvas, chartW, chartH, width, height, minPrice, maxPrice);
-        DrawTimeAxis(canvas, chartW, chartH, buffer, scrollOffset, visibleCandles, candleWidth, interval);
-        
+        DrawPriceAxis(canvas, chartW, mainChartH, width, height, minPrice, maxPrice);
+        DrawTimeAxis(canvas, chartW, totalChartH, buffer, scrollOffset, visibleCandles, candleWidth, interval);
+
+        // Draw current price indicator (TradingView style)
+        if (buffer.Count > 0)
+        {
+            float currentPrice = buffer[0].Close;
+            float prevPrice = buffer.Count > 1 ? buffer[1].Close : currentPrice;
+            bool isGreen = currentPrice >= prevPrice;
+            DrawCurrentPriceIndicator(canvas, chartW, mainChartH, currentPrice, minPrice, maxPrice, isGreen);
+        }
+
         // CROSSHAIR LABELS (Over Axes)
         if (isHoverChart)
         {
-            DrawCrosshairLabels(canvas, mousePos.X, mousePos.Y, chartW, chartH, minPrice, maxPrice, buffer, scrollOffset, visibleCandles, candleWidth, interval);
+            DrawCrosshairLabels(canvas, mousePos.X, mousePos.Y, chartW, mainChartH, minPrice, maxPrice, buffer, scrollOffset, visibleCandles, candleWidth, interval);
         }
     }
     
@@ -156,7 +183,7 @@ public class ChartRenderer
         // Draw Axis Background
         using var bgPaint = new SKPaint { Color = new SKColor(22, 27, 34), Style = SKPaintStyle.Fill };
         canvas.DrawRect(chartW, 0, totalW - chartW, totalH, bgPaint); // Right strip
-        
+
         using var linePaint = new SKPaint { Color = new SKColor(48, 54, 61), StrokeWidth = 1 };
         using var font = new SKFont(SKTypeface.Default, 11);
         using var textPaint = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
@@ -181,18 +208,49 @@ public class ChartRenderer
         {
             if (p < minPrice) continue;
             float y = MapPriceToY(p, minPrice, maxPrice, chartH);
-            
+
             // Axis Label
             string label = p < 10 ? p.ToString("F4") : p.ToString("F2");
-            
-            float mx = chartW + 5; 
-            float my = y + 4; 
-            
+
+            float mx = chartW + 5;
+            float my = y + 4;
+
             canvas.DrawText(label, mx, my, font, textPaint);
-            
+
             // Draw Tick
             canvas.DrawLine(chartW, y, chartW + 4, y, linePaint);
         }
+    }
+
+    private void DrawCurrentPriceIndicator(SKCanvas canvas, int chartW, int chartH, float currentPrice, float minPrice, float maxPrice, bool isGreen)
+    {
+        float y = MapPriceToY(currentPrice, minPrice, maxPrice, chartH);
+
+        // Draw horizontal line across chart (like TradingView)
+        using var linePaint = new SKPaint
+        {
+            Color = isGreen ? new SKColor(38, 166, 154) : new SKColor(239, 83, 80),
+            StrokeWidth = 1,
+            PathEffect = SKPathEffect.CreateDash(new float[] { 4, 4 }, 0)
+        };
+        canvas.DrawLine(0, y, chartW, y, linePaint);
+
+        // Draw price label box on right axis (TradingView style)
+        using var font = new SKFont(SKTypeface.Default, 11);
+        string priceLabel = currentPrice < 10 ? currentPrice.ToString("F4") : currentPrice.ToString("F2");
+        float labelWidth = font.MeasureText(priceLabel);
+
+        using var boxPaint = new SKPaint
+        {
+            Color = isGreen ? new SKColor(38, 166, 154) : new SKColor(239, 83, 80),
+            Style = SKPaintStyle.Fill
+        };
+        using var textPaint = new SKPaint { Color = SKColors.White, IsAntialias = true };
+
+        float boxHeight = 18;
+        SKRect priceBox = new SKRect(chartW, y - boxHeight / 2, chartW + labelWidth + 16, y + boxHeight / 2);
+        canvas.DrawRect(priceBox, boxPaint);
+        canvas.DrawText(priceLabel, chartW + 8, y + 4, font, textPaint);
     }
 
     private void DrawTimeAxis(SKCanvas canvas, int chartW, int chartH, RingBuffer<Candle> buffer, int scrollOffset, int visibleCandles, float candleWidth, string interval)
@@ -202,15 +260,18 @@ public class ChartRenderer
         using var textPaint = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
 
         if (buffer.Count == 0 && scrollOffset >= 0) return;
-        
-        int skip = (int)(100 / candleWidth); 
+
+        int skip = (int)(100 / candleWidth);
         if (skip < 1) skip = 1;
+
+        // Calculate phase to synchronize with grid (same as DrawGrid)
+        int phase = (skip - (scrollOffset % skip)) % skip;
 
         var latestTs = (buffer.Count > 0) ? buffer[0].Timestamp : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         DateTime latestTime = DateTimeOffset.FromUnixTimeMilliseconds(latestTs).LocalDateTime;
         TimeSpan intervalSpan = ParseInterval(interval);
 
-        for (int i = 0; i < visibleCandles; i += skip)
+        for (int i = phase; i < visibleCandles; i += skip)
         {
             int idx = i + scrollOffset;
             
@@ -244,43 +305,154 @@ public class ChartRenderer
         }
     }
 
-    private void DrawGrid(SKCanvas canvas, int chartW, int chartH, float minPrice, float maxPrice, int visibleCandles, float candleWidth, string interval)
+    private void DrawIndicators(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max)
     {
-        using var paint = new SKPaint { Color = new SKColor(30, 34, 40), IsAntialias = true, StrokeWidth = 1 };
+        if (buffer.Count < 50) return; // Need enough data for indicators
 
-        // Calculate grid interval based on timeframe
-        int gridInterval = interval switch
+        // SMA 20 (Yellow line)
+        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 20, new SKColor(255, 200, 50));
+
+        // SMA 50 (Cyan line)
+        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 50, new SKColor(100, 200, 255));
+    }
+
+    private void DrawSMA(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max, int period, SKColor color)
+    {
+        using var smaPaint = new SKPaint { Color = color, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
+        using var path = new SKPath();
+
+        bool started = false;
+
+        for (int i = 0; i < visible; i++)
         {
-            "1m" => 15,   // Every 15 minutes (15 candles)
-            "5m" => 12,   // Every hour (12 candles)
-            "15m" => 4,   // Every hour (4 candles)
-            "1h" => 6,    // Every 6 hours (6 candles)
-            "4h" => 6,    // Every day (6 candles)
-            "1d" => 7,    // Every week (7 candles)
-            _ => Math.Max(1, (int)(100 / candleWidth))
-        };
-        
-        // Vertical Lines (Time grid)
-        for (int i = 0; i < visibleCandles; i += gridInterval)
-        {
-             float x = (visibleCandles - 1 - i) * candleWidth + (candleWidth / 2);
-             canvas.DrawLine(x, 0, x, chartH, paint);
+            int idx = i + offset;
+            if (idx < 0 || idx >= buffer.Count) continue;
+
+            // Calculate SMA
+            if (idx + period > buffer.Count) continue; // Not enough data
+
+            float sum = 0;
+            for (int j = 0; j < period; j++)
+            {
+                sum += buffer[idx + j].Close;
+            }
+            float sma = sum / period;
+
+            float x = (visible - 1 - i) * candleWidth + (candleWidth / 2);
+            float y = MapPriceToY(sma, min, max, height);
+
+            if (!started)
+            {
+                path.MoveTo(x, y);
+                started = true;
+            }
+            else
+            {
+                path.LineTo(x, y);
+            }
         }
-        
-        // Horizontal Lines (Price grid)
-        float range = maxPrice - minPrice;
-        if (range <= 0) return;
-        double roughStep = range / 10.0;
-        double magnitude = System.Math.Pow(10, System.Math.Floor(System.Math.Log10(roughStep)));
-        double normalizedStep = roughStep / magnitude;
-        double stepSize = (normalizedStep < 1.5) ? 1 * magnitude : (normalizedStep < 3 ? 2 * magnitude : (normalizedStep < 7 ? 5 * magnitude : 10 * magnitude));
-        
-        float startPrice = (float)(System.Math.Floor(minPrice / stepSize) * stepSize);
-        for (float p = startPrice; p <= maxPrice; p += (float)stepSize)
+
+        canvas.DrawPath(path, smaPaint);
+    }
+
+    private void DrawVolumePanel(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, float yOffset, int volumeHeight, int chartW)
+    {
+        if (buffer.Count == 0) return;
+
+        // Calculate max volume for scaling
+        float maxVolume = 0;
+        for (int i = 0; i < visible; i++)
         {
-            if (p < minPrice) continue;
-            float y = MapPriceToY(p, minPrice, maxPrice, chartH);
-            canvas.DrawLine(0, y, chartW, y, paint);
+            int idx = i + offset;
+            if (idx < 0 || idx >= buffer.Count) continue;
+            ref var c = ref buffer[idx];
+            if (c.Volume > maxVolume) maxVolume = c.Volume;
+        }
+
+        if (maxVolume == 0) return;
+
+        // Draw separator line
+        using var separatorPaint = new SKPaint { Color = new SKColor(48, 54, 61), StrokeWidth = 1 };
+        canvas.DrawLine(0, yOffset, chartW, yOffset, separatorPaint);
+
+        // Draw volume bars
+        using var greenVolPaint = new SKPaint { Color = new SKColor(38, 166, 154, 100), Style = SKPaintStyle.Fill };
+        using var redVolPaint = new SKPaint { Color = new SKColor(239, 83, 80, 100), Style = SKPaintStyle.Fill };
+
+        float barWidth = candleWidth * 0.8f;
+
+        for (int i = 0; i < visible; i++)
+        {
+            int idx = i + offset;
+            if (idx < 0 || idx >= buffer.Count) continue;
+
+            ref var c = ref buffer[idx];
+
+            float x = (visible - 1 - i) * candleWidth + (candleWidth / 2);
+
+            // Calculate bar height (scale to volume panel height)
+            float barHeight = (c.Volume / maxVolume) * (volumeHeight - 10);
+            float y = yOffset + volumeHeight - barHeight;
+
+            // Green if close >= open, red otherwise
+            bool isGreen = c.Close >= c.Open;
+            var paint = isGreen ? greenVolPaint : redVolPaint;
+
+            canvas.DrawRect(x - barWidth / 2, y, barWidth, barHeight, paint);
+        }
+
+        // Draw volume label
+        using var font = new SKFont(SKTypeface.Default, 10);
+        using var textPaint = new SKPaint { Color = new SKColor(128, 128, 128), IsAntialias = true };
+        canvas.DrawText("Volume", 5, yOffset + 15, font, textPaint);
+    }
+
+    private void DrawGrid(SKCanvas canvas, int chartW, int chartH, float minPrice, float maxPrice, int visibleCandles, float candleWidth, string interval, RingBuffer<Candle> buffer, int scrollOffset)
+    {
+        // Horizontal Lines (Price grid) - Aligned with price axis
+        float range = maxPrice - minPrice;
+        if (range > 0)
+        {
+            double roughStep = range / 10.0;
+            double magnitude = System.Math.Pow(10, System.Math.Floor(System.Math.Log10(roughStep)));
+            double normalizedStep = roughStep / magnitude;
+
+            double stepSize;
+            if (normalizedStep < 1.5) stepSize = 1 * magnitude;
+            else if (normalizedStep < 3) stepSize = 2 * magnitude;
+            else if (normalizedStep < 7) stepSize = 5 * magnitude;
+            else stepSize = 10 * magnitude;
+
+            float startPrice = (float)(System.Math.Floor(minPrice / stepSize) * stepSize);
+
+            for (float p = startPrice; p <= maxPrice; p += (float)stepSize)
+            {
+                if (p < minPrice) continue;
+                float y = MapPriceToY(p, minPrice, maxPrice, chartH);
+                canvas.DrawLine(0, y, chartW, y, _gridPaint);
+            }
+        }
+
+        // Vertical Lines (Time grid) - Synchronized with time axis labels
+        // Calculate skip interval for grid density (matches DrawTimeAxis)
+        int skip = (int)(100 / candleWidth);
+        if (skip < 1) skip = 1;
+
+        // Calculate phase offset to synchronize grid with time axis
+        // Phase must move in the correct direction with scroll
+        int phase = (skip - (scrollOffset % skip)) % skip;
+
+        // Draw grid lines at same positions as time axis labels
+        for (int i = phase; i < visibleCandles; i += skip)
+        {
+            // Draw grid line at this position
+            float x = (visibleCandles - 1 - i) * candleWidth + (candleWidth / 2);
+
+            // Ensure the line is within the chart bounds
+            if (x >= 0 && x <= chartW)
+            {
+                canvas.DrawLine(x, 0, x, chartH, _gridPaint);
+            }
         }
     }
     

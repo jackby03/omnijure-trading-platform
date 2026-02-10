@@ -146,11 +146,26 @@ public class SearchModalRenderer
         var searchTextPaint = string.IsNullOrEmpty(modal.SearchText) ? _textPaintDim : _textPaintLarge;
         canvas.DrawText(displayText, searchRect.Left + 42, searchRect.MidY + 5, _font, searchTextPaint);
         
-        // Cursor
-        if (modal.IsVisible && !string.IsNullOrEmpty(modal.SearchText))
+        // Clear button (X) if text present
+        if (!string.IsNullOrEmpty(modal.SearchText))
         {
-            float cursorX = searchRect.Left + 42 + _font.MeasureText(modal.SearchText);
-            canvas.DrawLine(cursorX, searchRect.Top + 10, cursorX, searchRect.Bottom - 10, _textPaintLarge);
+            float clearX = searchRect.Right - 30;
+            float clearY = searchRect.MidY;
+            using var p = new SKPaint { Color = _textPaintDim.Color, StrokeWidth = 2, IsAntialias = true, Style = SKPaintStyle.Stroke };
+            canvas.DrawLine(clearX - 8, clearY - 8, clearX + 8, clearY + 8, p);
+            canvas.DrawLine(clearX + 8, clearY - 8, clearX - 8, clearY + 8, p);
+        }
+
+        // Cursor (if visible)
+        if (modal.IsVisible)
+        {
+            float textWidth = _font.MeasureText(modal.SearchText);
+            float cursorX = searchRect.Left + 42 + textWidth;
+            // Blink cursor
+            if ((DateTime.Now.Millisecond / 500) % 2 == 0)
+            {
+                canvas.DrawLine(cursorX, searchRect.Top + 10, cursorX, searchRect.Bottom - 10, _textPaintLarge);
+            }
         }
         
         y += 58;

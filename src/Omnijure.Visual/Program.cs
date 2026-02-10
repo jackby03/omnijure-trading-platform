@@ -36,6 +36,7 @@ public static class Program
     private static List<UiDropdown> _uiDropdowns = new List<UiDropdown>();
     private static UiDropdown _assetDropdown;
     private static UiDropdown _intervalDropdown;
+    private static UiDropdown _chartTypeDropdown;
     private static UiSearchBox _searchBox;
     private static UiSearchModal _searchModal;
     
@@ -186,23 +187,18 @@ public static class Program
         });
 
         // 2. Interval Dropdown
-        var intervals = new List<string> { "1s", "1m", "5m", "15m", "1h", "4h", "1d", "1w", "1M" };
-        _intervalDropdown = new UiDropdown(200, 5, 120, 30, "Interval", intervals, (tf) => SwitchContext(_currentSymbol, tf));
+        var intervals = new List<string> { "1m", "5m", "15m", "1h", "4h", "1d" };
+        _intervalDropdown = new UiDropdown(200, 5, 100, 30, "Interval", intervals, (tf) => SwitchContext(_currentSymbol, tf));
         _uiDropdowns.Add(_intervalDropdown);
 
-        // 3. Chart Type Buttons
-        float x = 330;
-        var types = new[] { "Candle", "Line", "Area" };
-        foreach(var t in types)
-        {
-            string typeStr = t;
-            _uiButtons.Add(new UiButton(x, 5, 70, 30, t, () => {
-                if (typeStr == "Candle") _chartType = ChartType.Candles;
-                else if (typeStr == "Line") _chartType = ChartType.Line;
-                else if (typeStr == "Area") _chartType = ChartType.Area;
-            }));
-            x += 75;
-        }
+        // 3. Chart Type Dropdown
+        var chartTypes = new List<string> { "Candles", "Line", "Area" };
+        _chartTypeDropdown = new UiDropdown(310, 5, 100, 30, "Chart", chartTypes, (type) => {
+            if (type == "Candles") _chartType = ChartType.Candles;
+            else if (type == "Line") _chartType = ChartType.Line;
+            else if (type == "Area") _chartType = ChartType.Area;
+        });
+        _uiDropdowns.Add(_chartTypeDropdown);
     }
 
     private static void OnResize(Vector2D<int> size)
@@ -218,11 +214,10 @@ public static class Program
         // Search modal has highest priority
         if (_searchModal != null && _searchModal.IsVisible)
         {
-            // Allow most printable characters
-            if (!char.IsControl(arg2))
-            {
-                _searchModal.AddChar(arg2);
-            }
+            // Stop processing if it's a control character we don't handle here
+            if (char.IsControl(arg2)) return;
+            
+            _searchModal.AddChar(arg2);
             return;
         }
         
@@ -352,26 +347,33 @@ public static class Program
         _currentSymbol = symbol;
         _currentTimeframe = interval;
         Console.WriteLine($"[Interface] Switching to {symbol} {interval}...");
-        _buffer.Clear(); 
-        
+        _buffer.Clear();
+
         // Reset viewport and zoom state
         _zoom = 1.0f;
         _scrollOffset = 0;
         _autoScaleY = true;
         _viewMinY = 0;
         _viewMaxY = 0;
-        
+
         // Update Title
         _window.Title = $"Omnijure - {symbol} [{interval}]";
-        
-        // Update search box placeholder to show current asset
+
+        // Update dropdowns selected items (don't recreate UI)
+        if (_assetDropdown != null)
+        {
+            _assetDropdown.SelectedItem = symbol;
+        }
+        if (_intervalDropdown != null)
+        {
+            _intervalDropdown.SelectedItem = interval;
+        }
         if (_searchBox != null)
         {
             _searchBox.Placeholder = symbol;
         }
-        
+
         _ = _binance.ConnectAsync(symbol, interval);
-        SetupUi();
     }
 
     private static void OnScroll(IMouse arg1, ScrollWheel arg2)
@@ -419,6 +421,19 @@ public static class Program
                 if (_mousePos.X >= modalX && _mousePos.X <= modalX + modalWidth &&
                     _mousePos.Y >= modalY && _mousePos.Y <= modalY + modalHeight)
                 {
+                    // Calculate search box area
+                    float searchBoxY = modalY + 84; 
+                    if (_mousePos.Y >= searchBoxY && _mousePos.Y <= searchBoxY + 44)
+                    {
+                        // Clicked inside search box area
+                        // If they click on the right side, maybe clear?
+                        if (_mousePos.X > modalX + modalWidth - 60)
+                        {
+                            _searchModal.Clear();
+                        }
+                        return; // Consume
+                    }
+
                     // Calculate tab click area
                     float tabStartY = modalY + 142; // y after search box spacer
                     if (_mousePos.Y >= tabStartY && _mousePos.Y <= tabStartY + 30)
@@ -438,6 +453,7 @@ public static class Program
                             }
                             tabX += labelWidth + 10;
                         }
+                        return; // Consume click in tab row area
                     }
 
                     // Calculate item click area (starts after all header elements)
@@ -569,9 +585,21 @@ public static class Program
         
         _mousePos = new Vector2D<float>(pos.X, pos.Y);
         
+        // Disable UI hover if search modal is visible
+        bool modalActive = _searchModal != null && (_searchModal.IsVisible || _searchModal.AnimationProgress > 0);
+        
         // 0. UI Hover
-        foreach(var dd in _uiDropdowns) dd.IsHovered = dd.Contains(_mousePos.X, _mousePos.Y);
-        foreach(var btn in _uiButtons) btn.IsHovered = btn.Contains(_mousePos.X, _mousePos.Y);
+        foreach(var dd in _uiDropdowns) 
+            dd.IsHovered = !modalActive && dd.Contains(_mousePos.X, _mousePos.Y);
+            
+        foreach(var btn in _uiButtons) 
+            btn.IsHovered = !modalActive && btn.Contains(_mousePos.X, _mousePos.Y);
+
+        if (modalActive)
+        {
+             _lastMousePos = _mousePos;
+             return; // Block all other mouse move logic (crosshair etc) when modal is active
+        }
 
         if (_layout.IsResizingLeft || _layout.IsResizingRight)
         {
@@ -662,32 +690,17 @@ public static class Program
         string decision = _mind?.LastDecision ?? "OFFLINE";
 
 
-        // Pre-Calculate Layout Logic (Moved from Renderer so we can control it)
-        int baseView = 150;
-        int visibleCandles = (int)(baseView / _zoom);
-        if (visibleCandles < 10) visibleCandles = 10; 
-        if (visibleCandles > 2000) visibleCandles = 2000;
+        // 3. LAYOUT & VIEWPORT
+        _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
         
-        // Future Scrolling: Allow going into negative index on the left (which means future on the right??)
-        // Wait, normally ScrollOffset=0 is Latest Candle at Right Edge.
-        // If we want empty space on the right, we need to start rendering starting from negative index?
-        // No, we render from Right to Left usually in loop? 
-        // Let's check ChartRenderer loop.
-        // It loops `i` from 0 to `visibleCandles`. `idx = i + scrollOffset`.
-        // x is calculated from `i`.
-        // `float x = width - axisWidth - (i * candleWidth)`
-        // So `i=0` is the Rightmost candle.
-        // If `scrollOffset = 0` -> `idx = 0` (Buffer[0] is latest). `i=0` draws Buffer[0] at Right Edge.
-        
-        // To show future space on the right, we need to have "indices" -1, -2, -3... at `i=0`, `i=1` etc.?
-        // No, `i` is screen position 0..Visible.
-        // If we want `i=0` (Right Edge) to be empty future, `idx` must be negative?
-        // `idx = i + scrollOffset`.
-        // If `scrollOffset` is negative (e.g. -10).
-        // `i=0` -> `idx = -10`. (Future).
-        // `i=10` -> `idx = 0`. (Latest Candle).
-        // So YES, allowing negative `scrollOffset` allows Future on the right.
-        
+        // Calculate visible candles based on actual chart width (subtracting right axis margin)
+        float chartWidth = _layout.ChartRect.Width - 60; // Matches ChartRenderer.RightAxisWidth
+        float baseCandleWidth = 8.0f;
+        float candleWidth = baseCandleWidth * _zoom;
+        if (candleWidth < 1.0f) candleWidth = 1.0f;
+        int visibleCandles = (int)Math.Ceiling(chartWidth / candleWidth);
+        if (visibleCandles < 2) visibleCandles = 2; 
+
         if (_scrollOffset > _buffer.Count - visibleCandles) _scrollOffset = _buffer.Count - visibleCandles;
         
         // Allow up to 50% screen width of future space
@@ -719,13 +732,12 @@ public static class Program
         // Apply Viewport Logic
         if (_autoScaleY)
         {
-            // Smooth transition could go here, but strict snap for now
             _viewMinY = calcMin;
             _viewMaxY = calcMax;
         }
 
-        // UPDATE LAYOUT
-        _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
+        // Future Scrolling: Allow going into negative index on the left (which means future on the right)
+        // ScrollOffset=0 is Latest Candle at Right Edge.
         
         // Pass to Layout
         _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades);
