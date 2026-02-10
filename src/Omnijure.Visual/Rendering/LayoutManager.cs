@@ -8,7 +8,7 @@ namespace Omnijure.Visual.Rendering;
 public class LayoutManager
 {
     // Layout Config
-    public float HeaderHeight { get; private set; } = 50;
+    public float HeaderHeight { get; private set; } = 28;
     
     // NEW: Panel System sin barras de título
     private readonly PanelSystem _panelSystem;
@@ -174,6 +174,21 @@ public class LayoutManager
 
         // CAPA 4: Status bar
         _statusBar.Render(canvas, screenWidth, screenHeight);
+        
+        // CAPA 5: Window border (1px, respeta paleta)
+        var windowBorderPaint = PaintPool.Instance.Rent();
+        try
+        {
+            windowBorderPaint.Color = new SKColor(50, 55, 65);
+            windowBorderPaint.Style = SKPaintStyle.Stroke;
+            windowBorderPaint.StrokeWidth = 1;
+            windowBorderPaint.IsAntialias = true;
+            canvas.DrawRoundRect(new SKRect(0.5f, 0.5f, screenWidth - 0.5f, screenHeight - 0.5f), 8, 8, windowBorderPaint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(windowBorderPaint);
+        }
     }
     
     public void UpdateFps(int fps) => _statusBar.UpdateFps(fps);
@@ -232,9 +247,6 @@ public class LayoutManager
 
             switch (panel.Config.Id)
             {
-                case PanelDefinitions.WATCHLIST:
-                    _sidebar.RenderWatchlist(canvas, contentWidth, contentHeight);
-                    break;
                 case PanelDefinitions.ORDERBOOK:
                     _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, orderBook);
                     break;

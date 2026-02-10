@@ -15,7 +15,6 @@ public static class PanelDefinitions
     public const string CHART = "chart";
     public const string ORDERBOOK = "orderbook";
     public const string TRADES = "trades";
-    public const string WATCHLIST = "watchlist";
     public const string POSITIONS = "positions";
     public const string ALERTS = "alerts";
 
@@ -41,8 +40,8 @@ public static class PanelDefinitions
             Id = ORDERBOOK,
             DisplayName = "Order Book",
             Icon = SvgIconRenderer.Icon.OrderBook,
-            DefaultPosition = PanelPosition.Right,
-            DefaultWidth = 320,
+            DefaultPosition = PanelPosition.Left,
+            DefaultWidth = 300,
             DefaultHeight = 600,
             CanClose = true,
             CanCollapse = true,
@@ -56,18 +55,6 @@ public static class PanelDefinitions
             DefaultPosition = PanelPosition.Right,
             DefaultWidth = 320,
             DefaultHeight = 400,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
-        },
-        [WATCHLIST] = new PanelConfig
-        {
-            Id = WATCHLIST,
-            DisplayName = "Watchlist",
-            Icon = SvgIconRenderer.Icon.Star,
-            DefaultPosition = PanelPosition.Left,
-            DefaultWidth = 280,
-            DefaultHeight = 600,
             CanClose = true,
             CanCollapse = true,
             CanFloat = true

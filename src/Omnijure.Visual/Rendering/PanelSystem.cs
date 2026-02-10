@@ -36,9 +36,7 @@ public class PanelSystem
 
     public PanelSystem()
     {
-        // Inicializar paneles por defecto
-        CreatePanel(PanelDefinitions.CHART);      // ? Chart es un panel más
-        CreatePanel(PanelDefinitions.WATCHLIST);
+        CreatePanel(PanelDefinitions.CHART);
         CreatePanel(PanelDefinitions.ORDERBOOK);
         CreatePanel(PanelDefinitions.TRADES);
         CreatePanel(PanelDefinitions.POSITIONS);

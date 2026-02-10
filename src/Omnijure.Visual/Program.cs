@@ -126,7 +126,9 @@ public static class Program
             onClose: () => _window.Close(),
             onMinimize: () => _window.WindowState = WindowState.Minimized,
             onMaximize: () => _window.WindowState = _window.WindowState == WindowState.Maximized 
-                ? WindowState.Normal : WindowState.Maximized
+                ? WindowState.Normal : WindowState.Maximized,
+            onWindowMove: (x, y) => _window.Position = new Vector2D<int>(x, y),
+            windowHandle: _window.Native!.Win32!.Value.Hwnd
         );
         _searchModalRenderer = new SearchModalRenderer();
         _buffer = new RingBuffer<Candle>(4096);
@@ -528,8 +530,8 @@ public static class Program
                 return;
             }
             
-            // Window control buttons (close, maximize, minimize)
-            if (_toolbar.HandleMouseDown(_mousePos.X, _mousePos.Y))
+            // Window control buttons (close, maximize, minimize, drag)
+            if (_toolbar.HandleMouseDown(_mousePos.X, _mousePos.Y, _window.Position.X, _window.Position.Y))
                 return;
             
             UiDropdown clickedDd = null;
@@ -631,6 +633,7 @@ public static class Program
         {
             _isDragging = false; 
             _isResizingPrice = false;
+            _toolbar.HandleMouseUp();
             _layout.HandleMouseUp();
         }
     }
@@ -655,10 +658,17 @@ public static class Program
         if (modalActive)
         {
              _lastMousePos = _mousePos;
-             return; // Block all other mouse move logic (crosshair etc) when modal is active
+             return;
         }
 
-        // NUEVO: Manejar movimiento de paneles (drag & drop)
+        // Window drag
+        if (_toolbar.HandleMouseMove())
+        {
+            _lastMousePos = _mousePos;
+            return;
+        }
+
+        // Manejar movimiento de paneles (drag & drop)
         _layout.HandleMouseMove(pos.X, pos.Y, deltaX, _window.Size.X, _window.Size.Y);
         
         // Si está arrastrando panel, bloquear otras interacciones
