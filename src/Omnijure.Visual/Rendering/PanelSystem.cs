@@ -56,6 +56,19 @@ public class PanelSystem
     private string _activeBottomTabId = PanelDefinitions.ORDERBOOK;
     private SKRect _bottomTabBarRect;
     private List<(string id, SKRect rect)> _bottomTabRects = new();
+    
+    // Side tab system (Left/Right docking with tabs)
+    private readonly Dictionary<PanelPosition, string> _activeTabIds = new()
+    {
+        [PanelPosition.Left] = PanelDefinitions.AI_ASSISTANT,
+        [PanelPosition.Right] = PanelDefinitions.PORTFOLIO
+    };
+    private readonly Dictionary<PanelPosition, List<(string id, SKRect rect)>> _sideTabRects = new()
+    {
+        [PanelPosition.Left] = new(),
+        [PanelPosition.Right] = new()
+    };
+    private readonly Dictionary<PanelPosition, SKRect> _sideTabBarRects = new();
 
     public IReadOnlyCollection<DockablePanel> Panels => _panels.Values;
 
@@ -91,25 +104,49 @@ public class PanelSystem
         float currentRightX = screenWidth;
         float currentBottomY = availableBottom;
 
-        // ???????????????????????????????????????????????????????????
-        // PASO 1: Left panels (full height menos status bar)
-        // ???????????????????????????????????????????????????????????
-        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Left && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
+        // PASO 1: Left panels (tabbed when multiple)
+        var leftPanels = _panels.Values.Where(p => p.Position == PanelPosition.Left && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder).ToList();
+        if (leftPanels.Count > 0)
         {
-            float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
-            panel.Bounds = new SKRect(currentLeftX, headerHeight, currentLeftX + width - PanelGap, availableBottom);
-            currentLeftX += width;
+            if (!leftPanels.Any(p => p.Config.Id == _activeTabIds.GetValueOrDefault(PanelPosition.Left)))
+                _activeTabIds[PanelPosition.Left] = leftPanels[0].Config.Id;
+            var activeLeft = leftPanels.First(p => p.Config.Id == _activeTabIds[PanelPosition.Left]);
+            float lw = activeLeft.IsCollapsed ? CollapsedWidth : activeLeft.Width;
+            if (leftPanels.Count > 1)
+            {
+                _sideTabBarRects[PanelPosition.Left] = new SKRect(currentLeftX, headerHeight, currentLeftX + lw - PanelGap, headerHeight + TabBarHeight);
+                activeLeft.Bounds = new SKRect(currentLeftX, headerHeight + TabBarHeight, currentLeftX + lw - PanelGap, availableBottom);
+            }
+            else
+            {
+                _sideTabBarRects.Remove(PanelPosition.Left);
+                activeLeft.Bounds = new SKRect(currentLeftX, headerHeight, currentLeftX + lw - PanelGap, availableBottom);
+            }
+            currentLeftX += lw;
         }
+        else { _sideTabBarRects.Remove(PanelPosition.Left); }
 
-        // ???????????????????????????????????????????????????????????
-        // PASO 2: Right panels (full height menos status bar)
-        // ???????????????????????????????????????????????????????????
-        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Right && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
+        // PASO 2: Right panels (tabbed when multiple)
+        var rightPanels = _panels.Values.Where(p => p.Position == PanelPosition.Right && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder).ToList();
+        if (rightPanels.Count > 0)
         {
-            float width = panel.IsCollapsed ? CollapsedWidth : panel.Width;
-            panel.Bounds = new SKRect(currentRightX - width + PanelGap, headerHeight, currentRightX, availableBottom);
-            currentRightX -= width;
+            if (!rightPanels.Any(p => p.Config.Id == _activeTabIds.GetValueOrDefault(PanelPosition.Right)))
+                _activeTabIds[PanelPosition.Right] = rightPanels[0].Config.Id;
+            var activeRight = rightPanels.First(p => p.Config.Id == _activeTabIds[PanelPosition.Right]);
+            float rw = activeRight.IsCollapsed ? CollapsedWidth : activeRight.Width;
+            if (rightPanels.Count > 1)
+            {
+                _sideTabBarRects[PanelPosition.Right] = new SKRect(currentRightX - rw + PanelGap, headerHeight, currentRightX, headerHeight + TabBarHeight);
+                activeRight.Bounds = new SKRect(currentRightX - rw + PanelGap, headerHeight + TabBarHeight, currentRightX, availableBottom);
+            }
+            else
+            {
+                _sideTabBarRects.Remove(PanelPosition.Right);
+                activeRight.Bounds = new SKRect(currentRightX - rw + PanelGap, headerHeight, currentRightX, availableBottom);
+            }
+            currentRightX -= rw;
         }
+        else { _sideTabBarRects.Remove(PanelPosition.Right); }
 
         // ???????????????????????????????????????????????????????????
         // PASO 3: Bottom tab group (tabbed, only active panel gets bounds)
@@ -155,10 +192,14 @@ public class PanelSystem
             centerPanel.Bounds = new SKRect(currentLeftX, headerHeight, currentRightX, currentBottomY);
         }
 
-        // Update handle positions for visible panels (skip inactive bottom tabs)
+        // Update handle positions for visible panels (skip inactive tabs)
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed))
         {
             if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
+                continue;
+            if ((panel.Position == PanelPosition.Left || panel.Position == PanelPosition.Right)
+                && !panel.IsFloating
+                && panel.Config.Id != _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id))
                 continue;
             UpdatePanelHandles(panel);
         }
@@ -220,6 +261,7 @@ public class PanelSystem
         
         // CAPA 2: Bottom tab bar + active bottom panel
         RenderBottomTabBar(canvas);
+        RenderSideTabBars(canvas);
         var activeBottomPanel = _panels.Values.FirstOrDefault(p => 
             p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed && 
             p.Config.Id == _activeBottomTabId && p != _draggingPanel);
@@ -228,10 +270,13 @@ public class PanelSystem
             RenderBottomPanelContent(canvas, activeBottomPanel);
         }
         
-        // CAPA 3: Docked panels (Left/Right only, bottom handled above)
+        // CAPA 3: Docked panels (Left/Right - only active tab visible)
         foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel && !p.IsClosed 
             && p.Position != PanelPosition.Center && p.Position != PanelPosition.Bottom))
         {
+            if ((panel.Position == PanelPosition.Left || panel.Position == PanelPosition.Right)
+                && panel.Config.Id != _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id))
+                continue;
             RenderPanel(canvas, panel);
         }
 
@@ -346,6 +391,79 @@ public class PanelSystem
             panel.Bounds.Right - 8,
             panel.Bounds.Bottom - 8
         );
+    }
+
+    private void RenderSideTabBars(SKCanvas canvas)
+    {
+        foreach (var kvp in _sideTabBarRects)
+        {
+            var position = kvp.Key;
+            var barRect = kvp.Value;
+            
+            var sideTabs = _panels.Values
+                .Where(p => p.Position == position && !p.IsFloating && !p.IsClosed)
+                .OrderBy(p => p.DockOrder)
+                .ToList();
+
+            if (sideTabs.Count < 2) continue;
+
+            var paint = PaintPool.Instance.Rent();
+            try
+            {
+                paint.Color = new SKColor(18, 21, 28);
+                paint.Style = SKPaintStyle.Fill;
+                canvas.DrawRect(barRect, paint);
+                
+                paint.Color = new SKColor(40, 45, 55);
+                paint.Style = SKPaintStyle.Stroke;
+                paint.StrokeWidth = 1;
+                canvas.DrawLine(barRect.Left, barRect.Bottom, barRect.Right, barRect.Bottom, paint);
+
+                _sideTabRects[position].Clear();
+                
+                using var tabFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+                float tabX = barRect.Left + 4;
+                float tabY = barRect.Top + 2;
+                float tabH = TabBarHeight - 4;
+                string activeId = _activeTabIds.GetValueOrDefault(position, "");
+                
+                foreach (var tab in sideTabs)
+                {
+                    bool isActive = tab.Config.Id == activeId;
+                    string label = tab.Config.DisplayName;
+                    float labelW = tabFont.MeasureText(label);
+                    float tabW = labelW + 28;
+                    
+                    var tabRect = new SKRect(tabX, tabY, tabX + tabW, tabY + tabH);
+                    _sideTabRects[position].Add((tab.Config.Id, tabRect));
+                    
+                    if (isActive)
+                    {
+                        paint.Style = SKPaintStyle.Fill;
+                        paint.Color = new SKColor(30, 34, 42);
+                        canvas.DrawRoundRect(new SKRoundRect(tabRect, 4, 4), paint);
+                        
+                        paint.Color = new SKColor(56, 139, 253);
+                        canvas.DrawRect(tabX + 4, tabY + tabH - 2, tabW - 8, 2, paint);
+                    }
+                    
+                    SvgIconRenderer.DrawIcon(canvas, tab.Config.Icon, 
+                        tabX + 6, tabY + (tabH - 12) / 2, 12,
+                        isActive ? new SKColor(56, 139, 253) : new SKColor(100, 108, 118));
+                    
+                    paint.Style = SKPaintStyle.Fill;
+                    paint.Color = isActive ? new SKColor(220, 225, 235) : new SKColor(100, 108, 118);
+                    paint.IsAntialias = true;
+                    canvas.DrawText(label, tabX + 22, tabY + tabH / 2 + 4, tabFont, paint);
+                    
+                    tabX += tabW + 2;
+                }
+            }
+            finally
+            {
+                PaintPool.Instance.Return(paint);
+            }
+        }
     }
 
     /// <summary>
@@ -921,6 +1039,29 @@ public class PanelSystem
             return;
         }
         
+        // Check side tab bar clicks (Left/Right)
+        foreach (var kvp in _sideTabBarRects)
+        {
+            if (kvp.Value.Contains(x, y))
+            {
+                foreach (var (id, rect) in _sideTabRects[kvp.Key])
+                {
+                    if (rect.Contains(x, y))
+                    {
+                        _activeTabIds[kvp.Key] = id;
+                        var tabPanel = GetPanel(id);
+                        if (tabPanel != null && tabPanel.Config.CanFloat)
+                        {
+                            _potentialDragPanel = tabPanel;
+                            _dragOffset = new SKPoint(tabPanel.Width / 2, TabBarHeight / 2);
+                        }
+                        return;
+                    }
+                }
+                return;
+            }
+        }
+        
         // Check resize edges
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed && !p.IsFloating && !p.IsCollapsed && p.Position != PanelPosition.Center))
         {
@@ -982,9 +1123,11 @@ public class PanelSystem
                 _draggingPanel.IsFloating = false;
                 _draggingPanel.DockOrder = GetNextDockOrder(_currentDockZone.Position);
                 
-                // Auto-activate as the active tab when docking to bottom
+                // Auto-activate as the active tab when docking
                 if (_currentDockZone.Position == PanelPosition.Bottom)
                     _activeBottomTabId = _draggingPanel.Config.Id;
+                else if (_currentDockZone.Position is PanelPosition.Left or PanelPosition.Right)
+                    _activeTabIds[_currentDockZone.Position] = _draggingPanel.Config.Id;
             }
             else
             {
@@ -1086,12 +1229,22 @@ public class PanelSystem
                         _draggingPanel.FloatingWidth = Math.Min(_draggingPanel.Width, 400);
                         _draggingPanel.FloatingHeight = Math.Min(_draggingPanel.Height, 300);
                         
-                        // Switch active tab to next available
                         var remainingTabs = _panels.Values
                             .Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed && p != _draggingPanel)
                             .OrderBy(p => p.DockOrder).ToList();
                         if (remainingTabs.Count > 0)
                             _activeBottomTabId = remainingTabs[0].Config.Id;
+                    }
+                    else if (_draggingPanel.Position is PanelPosition.Left or PanelPosition.Right)
+                    {
+                        _draggingPanel.FloatingWidth = _draggingPanel.Bounds.Width;
+                        _draggingPanel.FloatingHeight = Math.Min(_draggingPanel.Bounds.Height, 400);
+                        
+                        var remainingSide = _panels.Values
+                            .Where(p => p.Position == _draggingPanel.Position && !p.IsFloating && !p.IsClosed && p != _draggingPanel)
+                            .OrderBy(p => p.DockOrder).ToList();
+                        if (remainingSide.Count > 0)
+                            _activeTabIds[_draggingPanel.Position] = remainingSide[0].Config.Id;
                     }
                     else
                     {
@@ -1234,7 +1387,11 @@ public class PanelSystem
     
     public bool IsBottomTabActive(DockablePanel panel)
     {
-        return panel.Position != PanelPosition.Bottom || panel.Config.Id == _activeBottomTabId;
+        if (panel.Position == PanelPosition.Bottom)
+            return panel.Config.Id == _activeBottomTabId;
+        if (panel.Position == PanelPosition.Left || panel.Position == PanelPosition.Right)
+            return panel.Config.Id == _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id);
+        return true;
     }
     
     private ResizeEdge GetResizeEdge(DockablePanel panel, float x, float y)
