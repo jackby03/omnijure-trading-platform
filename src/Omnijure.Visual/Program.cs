@@ -441,6 +441,10 @@ public static partial class Program
                 return;
             }
             
+            // Window resize from edges (must check before toolbar)
+            if (_toolbar.TryStartResize(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y))
+                return;
+
             // Window control buttons (close, maximize, minimize, drag)
             if (_toolbar.HandleMouseDown(_mousePos.X, _mousePos.Y, _window.Position.X, _window.Position.Y))
                 return;
@@ -834,7 +838,8 @@ public static partial class Program
         _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades, _drawingState, _window.Size.X, _window.Size.Y);
         
         // Render Toolbar (Top)
-        _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y);
+        _toolbar.UpdateWindowSize(_window.Size.X, _window.Size.Y);
+        _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y);
         _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _assetDropdown, _uiDropdowns, _uiButtons);
         
         // Render Search Modal (if visible or animating)

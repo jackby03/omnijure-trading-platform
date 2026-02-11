@@ -47,7 +47,7 @@ public static class PanelDefinitions
         [ORDERBOOK] = new PanelConfig
         {
             Id = ORDERBOOK, DisplayName = "Order Book", Icon = SvgIconRenderer.Icon.OrderBook,
-            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 220,
+            DefaultPosition = PanelPosition.Right, DefaultWidth = 280, DefaultHeight = 600,
             CanClose = true, CanCollapse = true, CanFloat = true
         },
         [TRADES] = new PanelConfig

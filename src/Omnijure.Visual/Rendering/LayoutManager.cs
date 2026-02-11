@@ -287,7 +287,7 @@ public class LayoutManager
         switch (panel.Config.Id)
         {
             case PanelDefinitions.ORDERBOOK:
-                _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, _lastOrderBook);
+                _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, _lastOrderBook, panel.Position);
                 break;
             case PanelDefinitions.TRADES:
                 _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades);

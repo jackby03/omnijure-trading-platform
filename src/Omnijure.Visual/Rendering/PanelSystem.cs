@@ -6,8 +6,8 @@ using System.Linq;
 namespace Omnijure.Visual.Rendering;
 
 /// <summary>
-/// Sistema de paneles moderno sin barras de título.
-/// Interacción mediante handles minimalistas en las esquinas.
+/// Sistema de paneles moderno sin barras de tï¿½tulo.
+/// Interacciï¿½n mediante handles minimalistas en las esquinas.
 /// Estilo inspirado en herramientas profesionales como OBS/Figma.
 /// </summary>
 public class PanelSystem
@@ -239,7 +239,7 @@ public class PanelSystem
             );
         }
 
-        // Content bounds (área útil del panel)
+        // Content bounds (ï¿½rea ï¿½til del panel)
         float topPadding = 40f; // Espacio para handles y nombre
         panel.ContentBounds = new SKRect(
             panel.Bounds.Left + 8,
@@ -497,7 +497,7 @@ public class PanelSystem
             // VS-style dock guides
             RenderDockGuides(canvas);
 
-            // Dragging panel (z-index máximo)
+            // Dragging panel (z-index mï¿½ximo)
             RenderDraggingPanel(canvas, _draggingPanel);
             renderDraggingContent?.Invoke(canvas, _draggingPanel);
         }
@@ -696,7 +696,7 @@ public class PanelSystem
             paint.Style = SKPaintStyle.Fill;
             canvas.DrawRoundRect(panel.Bounds, 6, 6, paint);
 
-            // Border — highlight on active (clicked) or handle hover
+            // Border ï¿½ highlight on active (clicked) or handle hover
             bool isActive = _activePanel == panel;
             bool isHandleHovered = _hoveredHandle != null && _hoveredHandle.StartsWith(panel.Config.Id);
             bool highlight = isActive || isHandleHovered;
@@ -868,7 +868,7 @@ public class PanelSystem
                     break;
 
                 case "chevron_collapse":
-                    // Flecha hacia afuera según posición
+                    // Flecha hacia afuera segï¿½n posiciï¿½n
                     using (var path = new SKPath())
                     {
                         if (position == PanelPosition.Left)
@@ -894,7 +894,7 @@ public class PanelSystem
                     break;
 
                 case "chevron_expand":
-                    // Flecha hacia adentro según posición
+                    // Flecha hacia adentro segï¿½n posiciï¿½n
                     using (var path = new SKPath())
                     {
                         if (position == PanelPosition.Left)
@@ -1116,7 +1116,7 @@ public class PanelSystem
                 return;
             }
 
-            // Drag handle - preparar para arrastrar pero NO mover todavía
+            // Drag handle - preparar para arrastrar pero NO mover todavï¿½a
             if (panel.Config.CanFloat && panel.DragHandleBounds.Contains(x, y))
             {
                 _potentialDragPanel = panel;
@@ -1147,7 +1147,7 @@ public class PanelSystem
             }
             else
             {
-                // No valid zone — restore to original position
+                // No valid zone ï¿½ restore to original position
                 _draggingPanel.Position = _originalPosition;
                 _draggingPanel.IsFloating = _originalIsFloating;
                 _draggingPanel.Bounds = _originalBounds;
@@ -1223,7 +1223,7 @@ public class PanelSystem
                 Math.Pow(y - _mouseDownPosition.Y, 2)
             );
 
-            // Solo empezar a arrastrar si se movió más que el threshold
+            // Solo empezar a arrastrar si se moviï¿½ mï¿½s que el threshold
             if (distance > DragThreshold)
             {
                 _draggingPanel = _potentialDragPanel;
@@ -1271,7 +1271,7 @@ public class PanelSystem
             }
         }
 
-        // Si ya estamos arrastrando, actualizar posición
+        // Si ya estamos arrastrando, actualizar posiciï¿½n
         if (_draggingPanel != null)
         {
             float newX = x - _dragOffset.X;
@@ -1376,7 +1376,10 @@ public class PanelSystem
             bottomMargin = tabContentH + TabBarHeight;
         }
 
-        return new SKRect(leftMargin, headerHeight, screenWidth - rightMargin, availableBottom - bottomMargin);
+        // Ensure chart never collapses to zero â€” leave at least 200x120 px
+        float chartRight  = Math.Max(screenWidth - rightMargin, leftMargin + 200);
+        float chartBottom = Math.Max(availableBottom - bottomMargin, headerHeight + 120);
+        return new SKRect(leftMargin, headerHeight, chartRight, chartBottom);
     }
 
     public bool IsMouseOverPanel(float x, float y) => _panels.Values.Any(p => p.Bounds.Contains(x, y));
@@ -1472,7 +1475,7 @@ public class DockablePanel
     public int DockOrder { get; set; }
     
     /// <summary>
-    /// Título dinámico (ej: "BTCUSDT • 1m" para el chart)
+    /// Tï¿½tulo dinï¿½mico (ej: "BTCUSDT ï¿½ 1m" para el chart)
     /// </summary>
     public string? DynamicTitle { get; set; }
 

@@ -1,3 +1,4 @@
+using System;
 using Silk.NET.Maths;
 using Silk.NET.Input;
 using Omnijure.Visual.Rendering;
@@ -135,6 +136,16 @@ public static partial class Program
     
     private static void OnResize(Vector2D<int> size)
     {
+        // Enforce minimum size – clamp and push back to the window if needed
+        // (Also enforced natively via WM_GETMINMAXINFO in ToolbarRenderer)
+        int w = Math.Max(size.X, ToolbarRenderer.MinWindowWidth);
+        int h = Math.Max(size.Y, ToolbarRenderer.MinWindowHeight);
+        if (w != size.X || h != size.Y)
+        {
+            _window.Size = new Vector2D<int>(w, h);
+            return; // The forced resize will re-trigger OnResize with valid size
+        }
+
         _gl?.Viewport(size);
         CreateSurface(size);
     }

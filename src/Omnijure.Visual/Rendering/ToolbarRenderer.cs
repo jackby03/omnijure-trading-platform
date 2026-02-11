@@ -76,18 +76,87 @@ public class ToolbarRenderer
     // Win32 P/Invoke
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT point);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    
+    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
+    [DllImport("user32.dll")] private static extern IntPtr SetCursor(IntPtr hCursor);
+    [DllImport("user32.dll")] private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")] private static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    private const int GWL_WNDPROC = -4;
+    private const int GWL_STYLE   = -16;
+    private const uint WM_GETMINMAXINFO = 0x0024;
+    private const uint WM_NCCALCSIZE    = 0x0083;
+    private const uint WM_NCHITTEST     = 0x0084;
+
+    // Window styles needed for native resize
+    private const int WS_THICKFRAME  = 0x00040000;
+    private const int WS_MAXIMIZEBOX = 0x00010000;
+
+    // SetWindowPos flags
+    private const uint SWP_NOMOVE     = 0x0002;
+    private const uint SWP_NOSIZE     = 0x0001;
+    private const uint SWP_NOZORDER   = 0x0004;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    // Min window size constants
+    public const int MinWindowWidth  = 960;
+    public const int MinWindowHeight = 540;
+
+    private static IntPtr _prevWndProc;
+    // Must keep a reference to the delegate to prevent GC collection
+    private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    private static WndProcDelegate? _wndProcDelegate;
+
+    // Standard cursor IDs
+    private const int IDC_ARROW    = 32512;
+    private const int IDC_SIZEWE   = 32644; // horizontal resize (left-right)
+    private const int IDC_SIZENS   = 32645; // vertical resize (up-down)
+    private const int IDC_SIZENWSE = 32642; // diagonal resize (top-left / bottom-right)
+    private const int IDC_SIZENESW = 32643; // diagonal resize (top-right / bottom-left)
+
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X; public int Y; }
-    
+
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
+
+    // WM_NCLBUTTONDOWN lets Windows handle native resize/move
+    private const uint WM_NCLBUTTONDOWN = 0x00A1;
+    // Hit-test values for resize edges/corners
+    private const int HTLEFT        = 10;
+    private const int HTRIGHT       = 11;
+    private const int HTTOP         = 12;
+    private const int HTTOPLEFT     = 13;
+    private const int HTTOPRIGHT    = 14;
+    private const int HTBOTTOM      = 15;
+    private const int HTBOTTOMLEFT  = 16;
+    private const int HTBOTTOMRIGHT = 17;
+
+    /// <summary>
+    /// Width of the invisible resize grab zone at each edge of the window.
+    /// </summary>
+    private const float ResizeGripSize = 6f;
 
     // Window control state
     private Action? _onClose;
     private Action? _onMinimize;
     private Action? _onMaximize;
     private Action<int, int>? _onWindowMove;
+    private IntPtr _hwnd;
     private SKRect _closeButtonRect;
     private SKRect _maximizeButtonRect;
     private SKRect _minimizeButtonRect;
@@ -96,17 +165,149 @@ public class ToolbarRenderer
     private POINT _dragStartCursor;
     private (int X, int Y) _dragStartWindowPos;
 
-    public void SetWindowActions(Action onClose, Action onMinimize, Action onMaximize, 
+    // Resize cursor state
+    private int _currentResizeCursor; // 0 = none, HTLEFT/HTRIGHT/etc.
+
+    // Store last known size for WM_NCHITTEST calculation
+    private static int _lastScreenWidth;
+    private static int _lastScreenHeight;
+
+    public void SetWindowActions(Action onClose, Action onMinimize, Action onMaximize,
         Action<int, int> onWindowMove, IntPtr windowHandle)
     {
         _onClose = onClose;
         _onMinimize = onMinimize;
         _onMaximize = onMaximize;
         _onWindowMove = onWindowMove;
-        
+        _hwnd = windowHandle;
+
         // Windows 11 rounded corners
         int preference = DWMWCP_ROUND;
         DwmSetWindowAttribute(windowHandle, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
+
+        // Inject WS_THICKFRAME so Windows allows native resize on a borderless window.
+        // WS_MAXIMIZEBOX enables Win+Arrow snap behaviour.
+        IntPtr style = GetWindowLongPtr(windowHandle, GWL_STYLE);
+        style = (IntPtr)((long)style | WS_THICKFRAME | WS_MAXIMIZEBOX);
+        SetWindowLongPtr(windowHandle, GWL_STYLE, style);
+
+        // Force Windows to re-read the style change
+        SetWindowPos(windowHandle, IntPtr.Zero, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
+        // Subclass the window procedure to:
+        //  - WM_NCCALCSIZE: return 0 to keep full client area (no visible border)
+        //  - WM_NCHITTEST:  report resize edges so Windows handles drag-resize
+        //  - WM_GETMINMAXINFO: enforce minimum window size
+        _wndProcDelegate = WndProc;
+        _prevWndProc = GetWindowLongPtr(windowHandle, GWL_WNDPROC);
+        SetWindowLongPtr(windowHandle, GWL_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProcDelegate));
+    }
+
+    /// <summary>
+    /// Must be called every frame so the WndProc knows the current window dimensions.
+    /// </summary>
+    public void UpdateWindowSize(int w, int h)
+    {
+        _lastScreenWidth = w;
+        _lastScreenHeight = h;
+    }
+
+    private static IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        switch (msg)
+        {
+            // Remove the non-client area so the window stays fully borderless
+            case WM_NCCALCSIZE:
+                if (wParam != IntPtr.Zero)
+                    return IntPtr.Zero;        // returning 0 = entire window is client area
+                break;
+
+            // Tell Windows where the resize edges are
+            case WM_NCHITTEST:
+            {
+                // lParam: low word = screen X, high word = screen Y
+                // We need client-relative coords â†’ use ScreenToClient, but simpler:
+                // just fall through to DefWindowProc and fix up if needed.
+                IntPtr defHit = DefWindowProc(hWnd, msg, wParam, lParam);
+                int defVal = (int)defHit;
+
+                // If DefWindowProc already detected an edge (it knows from WS_THICKFRAME), use it
+                if (defVal >= HTLEFT && defVal <= HTBOTTOMRIGHT)
+                    return defHit;
+
+                // Otherwise check ourselves with pixel coords (DefWindowProc might say HTCLIENT)
+                break;
+            }
+
+            // Enforce minimum window size
+            case WM_GETMINMAXINFO:
+                if (lParam != IntPtr.Zero)
+                {
+                    var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+                    mmi.ptMinTrackSize = new POINT { X = MinWindowWidth, Y = MinWindowHeight };
+                    Marshal.StructureToPtr(mmi, lParam, false);
+                    return IntPtr.Zero;
+                }
+                break;
+        }
+        return CallWindowProc(_prevWndProc, hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>
+    /// Returns the NCHITTEST value for the given position, or 0 if not on a resize edge.
+    /// </summary>
+    public int HitTestResize(float x, float y, int screenWidth, int screenHeight)
+    {
+        bool left   = x <= ResizeGripSize;
+        bool right  = x >= screenWidth - ResizeGripSize;
+        bool top    = y <= ResizeGripSize;
+        bool bottom = y >= screenHeight - ResizeGripSize;
+
+        if (top && left)     return HTTOPLEFT;
+        if (top && right)    return HTTOPRIGHT;
+        if (bottom && left)  return HTBOTTOMLEFT;
+        if (bottom && right) return HTBOTTOMRIGHT;
+        if (left)            return HTLEFT;
+        if (right)           return HTRIGHT;
+        if (top)             return HTTOP;
+        if (bottom)          return HTBOTTOM;
+        return 0;
+    }
+
+    /// <summary>
+    /// If the mouse is on a resize edge, initiates native Win32 resize and returns true.
+    /// </summary>
+    public bool TryStartResize(float x, float y, int screenWidth, int screenHeight)
+    {
+        int ht = HitTestResize(x, y, screenWidth, screenHeight);
+        if (ht == 0 || _hwnd == IntPtr.Zero) return false;
+
+        ReleaseCapture();
+        SendMessage(_hwnd, WM_NCLBUTTONDOWN, (IntPtr)ht, IntPtr.Zero);
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the current resize cursor hit-test value for cursor rendering.
+    /// Updated every mouse move. 0 = no resize edge.
+    /// </summary>
+    public int CurrentResizeCursor => _currentResizeCursor;
+
+    /// <summary>
+    /// Updates the system cursor to match the current resize edge (or restores arrow).
+    /// </summary>
+    private void ApplyResizeCursor()
+    {
+        int cursorId = _currentResizeCursor switch
+        {
+            HTLEFT or HTRIGHT                  => IDC_SIZEWE,
+            HTTOP or HTBOTTOM                  => IDC_SIZENS,
+            HTTOPLEFT or HTBOTTOMRIGHT         => IDC_SIZENWSE,
+            HTTOPRIGHT or HTBOTTOMLEFT         => IDC_SIZENESW,
+            _                                  => IDC_ARROW
+        };
+        SetCursor(LoadCursor(IntPtr.Zero, cursorId));
     }
 
     public bool HandleMouseDown(float x, float y, int windowX, int windowY)
@@ -129,7 +330,7 @@ public class ToolbarRenderer
             }
         }
         
-        // Menu bar click — toggle menu
+        // Menu bar click ï¿½ toggle menu
         foreach (var (label, rect) in _menuItemRects)
         {
             if (rect.Contains(x, y))
@@ -494,11 +695,18 @@ public class ToolbarRenderer
     private float _lastMouseX = 0;
     private float _lastMouseY = 0;
     
-    public void UpdateMousePos(float x, float y)
+    public void UpdateMousePos(float x, float y, int screenWidth = 0, int screenHeight = 0)
     {
         _lastMouseX = x;
         _lastMouseY = y;
-        
+
+        // Track resize cursor state and update system cursor
+        if (screenWidth > 0 && screenHeight > 0)
+            _currentResizeCursor = HitTestResize(x, y, screenWidth, screenHeight);
+        else
+            _currentResizeCursor = 0;
+        ApplyResizeCursor();
+
         // Hover-to-switch menus (when one is open, hovering another opens it)
         if (_openMenu != null)
         {
