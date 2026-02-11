@@ -134,7 +134,8 @@ public class ChartRenderer
         // OPTIMIZED: Use SKPath batching to reduce draw calls from N*3 to just 3
         using var bullishPath = new SKPath();
         using var bearishPath = new SKPath();
-        using var wicksPath = new SKPath();
+        using var bullishWicksPath = new SKPath();
+        using var bearishWicksPath = new SKPath();
 
         float halfW = candleWidth * 0.4f;
 
@@ -158,9 +159,10 @@ public class ChartRenderer
 
             bool isBullish = c.Close >= c.Open;
 
-            // Add wick to shared path
-            wicksPath.MoveTo(x, yHigh);
-            wicksPath.LineTo(x, yLow);
+            // Add wick to colored path
+            var wPath = isBullish ? bullishWicksPath : bearishWicksPath;
+            wPath.MoveTo(x, yHigh);
+            wPath.LineTo(x, yLow);
 
             // Add body to appropriate path
             float rectTop = System.Math.Min(yOpen, yClose);
@@ -171,10 +173,12 @@ public class ChartRenderer
             bodyPath.AddRect(SKRect.Create(x - halfW, rectTop, halfW * 2, rectBot - rectTop));
         }
 
-        // Draw all at once (3 draw calls instead of N*3) - HUGE performance win
-        using var wickPaint = new SKPaint { IsAntialias = true, StrokeWidth = 1, Style = SKPaintStyle.Stroke };
-        wickPaint.Color = ThemeManager.ChartGrid;
-        canvas.DrawPath(wicksPath, wickPaint);
+        // Draw all at once (4 draw calls instead of N*3) - HUGE performance win
+        float wickWidth = Math.Max(candleWidth * 0.12f, 1.5f);
+        using var bullWickPaint = new SKPaint { IsAntialias = true, StrokeWidth = wickWidth, Style = SKPaintStyle.Stroke, Color = ThemeManager.BullishGreen };
+        using var bearWickPaint = new SKPaint { IsAntialias = true, StrokeWidth = wickWidth, Style = SKPaintStyle.Stroke, Color = ThemeManager.BearishRed };
+        canvas.DrawPath(bullishWicksPath, bullWickPaint);
+        canvas.DrawPath(bearishWicksPath, bearWickPaint);
         
         canvas.DrawPath(bullishPath, _bullishPaint);
         canvas.DrawPath(bearishPath, _bearishPaint);
@@ -507,8 +511,10 @@ public class ChartRenderer
         if (buffer.Count >= 20)
         {
             float sma20 = CalculateSMAValue(buffer, 20, scrollOffset);
+            using var sma20LinePaint = new SKPaint { Color = ThemeManager.Indicator20, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, StrokeCap = SKStrokeCap.Round };
+            canvas.DrawLine(x, y - 4, x + 14, y - 4, sma20LinePaint);
             using var sma20Paint = new SKPaint { Color = ThemeManager.Indicator20, IsAntialias = true };
-            canvas.DrawText($"━ SMA(20): {sma20:F2}", x, y, font, sma20Paint);
+            canvas.DrawText($"SMA(20): {sma20:F2}", x + 18, y, font, sma20Paint);
             y += lineHeight;
         }
 
@@ -516,8 +522,10 @@ public class ChartRenderer
         if (buffer.Count >= 50)
         {
             float sma50 = CalculateSMAValue(buffer, 50, scrollOffset);
+            using var sma50LinePaint = new SKPaint { Color = ThemeManager.Indicator50, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, StrokeCap = SKStrokeCap.Round };
+            canvas.DrawLine(x, y - 4, x + 14, y - 4, sma50LinePaint);
             using var sma50Paint = new SKPaint { Color = ThemeManager.Indicator50, IsAntialias = true };
-            canvas.DrawText($"━ SMA(50): {sma50:F2}", x, y, font, sma50Paint);
+            canvas.DrawText($"SMA(50): {sma50:F2}", x + 18, y, font, sma50Paint);
             y += lineHeight;
         }
 
