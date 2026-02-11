@@ -3,85 +3,82 @@
 namespace Omnijure.Visual.Rendering;
 
 /// <summary>
-/// Definiciones centralizadas de todos los paneles de la aplicación.
-/// Sistema de nomenclatura claro para referencia fácil.
+/// Omnijure TDS panel layout.
+/// Default: AI Assistant (left) | Chart (center) | Portfolio (right) | OrderBook (bottom)
+/// Hidden: Script Editor, Trades, Positions, Alerts, Logs
 /// </summary>
 public static class PanelDefinitions
 {
-    // ═══════════════════════════════════════════════════════════
-    // IDENTIFICADORES DE PANELES
-    // ═══════════════════════════════════════════════════════════
-    
+    // Core
     public const string CHART = "chart";
+
+    // Visible by default
+    public const string AI_ASSISTANT = "ai_assistant";
+    public const string PORTFOLIO = "portfolio";
     public const string ORDERBOOK = "orderbook";
+
+    // Hidden by default
     public const string TRADES = "trades";
     public const string POSITIONS = "positions";
+    public const string SCRIPT_EDITOR = "script_editor";
     public const string ALERTS = "alerts";
+    public const string LOGS = "logs";
 
-    /// <summary>
-    /// Configuración de todos los paneles disponibles
-    /// </summary>
     public static readonly Dictionary<string, PanelConfig> Panels = new()
     {
         [CHART] = new PanelConfig
         {
-            Id = CHART,
-            DisplayName = "Chart",
-            Icon = SvgIconRenderer.Icon.Chart,
-            DefaultPosition = PanelPosition.Center,
-            DefaultWidth = 800,
-            DefaultHeight = 600,
-            CanClose = true,
-            CanCollapse = false,
-            CanFloat = true
+            Id = CHART, DisplayName = "Chart", Icon = SvgIconRenderer.Icon.Chart,
+            DefaultPosition = PanelPosition.Center, DefaultWidth = 800, DefaultHeight = 600,
+            CanClose = false, CanCollapse = false, CanFloat = false
+        },
+        [AI_ASSISTANT] = new PanelConfig
+        {
+            Id = AI_ASSISTANT, DisplayName = "AI Assistant", Icon = SvgIconRenderer.Icon.Star,
+            DefaultPosition = PanelPosition.Left, DefaultWidth = 320, DefaultHeight = 600,
+            CanClose = true, CanCollapse = true, CanFloat = true
+        },
+        [PORTFOLIO] = new PanelConfig
+        {
+            Id = PORTFOLIO, DisplayName = "Portfolio", Icon = SvgIconRenderer.Icon.Wallet,
+            DefaultPosition = PanelPosition.Right, DefaultWidth = 280, DefaultHeight = 600,
+            CanClose = true, CanCollapse = true, CanFloat = true
         },
         [ORDERBOOK] = new PanelConfig
         {
-            Id = ORDERBOOK,
-            DisplayName = "Order Book",
-            Icon = SvgIconRenderer.Icon.OrderBook,
-            DefaultPosition = PanelPosition.Left,
-            DefaultWidth = 300,
-            DefaultHeight = 600,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
+            Id = ORDERBOOK, DisplayName = "Order Book", Icon = SvgIconRenderer.Icon.OrderBook,
+            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 220,
+            CanClose = true, CanCollapse = true, CanFloat = true
         },
         [TRADES] = new PanelConfig
         {
-            Id = TRADES,
-            DisplayName = "Trades",
-            Icon = SvgIconRenderer.Icon.Exchange,
-            DefaultPosition = PanelPosition.Right,
-            DefaultWidth = 320,
-            DefaultHeight = 400,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
+            Id = TRADES, DisplayName = "Trades", Icon = SvgIconRenderer.Icon.Exchange,
+            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 220,
+            CanClose = true, CanCollapse = true, CanFloat = true
         },
         [POSITIONS] = new PanelConfig
         {
-            Id = POSITIONS,
-            DisplayName = "Positions",
-            Icon = SvgIconRenderer.Icon.Wallet,
-            DefaultPosition = PanelPosition.Bottom,
-            DefaultWidth = 800,
-            DefaultHeight = 200,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
+            Id = POSITIONS, DisplayName = "Positions", Icon = SvgIconRenderer.Icon.Wallet,
+            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 220,
+            CanClose = true, CanCollapse = true, CanFloat = true
+        },
+        [SCRIPT_EDITOR] = new PanelConfig
+        {
+            Id = SCRIPT_EDITOR, DisplayName = "Script Editor", Icon = SvgIconRenderer.Icon.Settings,
+            DefaultPosition = PanelPosition.Right, DefaultWidth = 400, DefaultHeight = 600,
+            CanClose = true, CanCollapse = true, CanFloat = true, StartClosed = true
         },
         [ALERTS] = new PanelConfig
         {
-            Id = ALERTS,
-            DisplayName = "Alerts",
-            Icon = SvgIconRenderer.Icon.Bell,
-            DefaultPosition = PanelPosition.Bottom,
-            DefaultWidth = 800,
-            DefaultHeight = 180,
-            CanClose = true,
-            CanCollapse = true,
-            CanFloat = true
+            Id = ALERTS, DisplayName = "Alerts", Icon = SvgIconRenderer.Icon.Bell,
+            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 180,
+            CanClose = true, CanCollapse = true, CanFloat = true, StartClosed = true
+        },
+        [LOGS] = new PanelConfig
+        {
+            Id = LOGS, DisplayName = "Console", Icon = SvgIconRenderer.Icon.Info,
+            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 200,
+            CanClose = true, CanCollapse = true, CanFloat = true, StartClosed = true
         }
     };
 }
@@ -100,6 +97,7 @@ public class PanelConfig
     public bool CanClose { get; set; }
     public bool CanCollapse { get; set; }
     public bool CanFloat { get; set; }
+    public bool StartClosed { get; set; }
 }
 
 /// <summary>

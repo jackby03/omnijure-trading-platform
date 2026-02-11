@@ -35,8 +35,6 @@ public class SidebarRenderer
 
     public void RenderOrderBook(SKCanvas canvas, float width, float height, OrderBook orderBook)
     {
-        // Ya no dibujamos fondo ni header - el panel lo maneja
-        
         if (orderBook == null) 
         {
             RenderEmptyState(canvas, width, height, "No order book data");
@@ -45,40 +43,82 @@ public class SidebarRenderer
 
         lock(orderBook)
         {
-            float rowH = 18;
-            float startY = 10;
-            
-            var asks = orderBook.Asks.Take(20).ToList();
-            var bids = orderBook.Bids.Take(20).ToList();
+            var asks = orderBook.Asks.Take(25).ToList();
+            var bids = orderBook.Bids.Take(25).ToList();
             
             float maxQty = 0;
             if (asks.Count > 0) maxQty = Math.Max(maxQty, asks.Max(a => a.Quantity));
             if (bids.Count > 0) maxQty = Math.Max(maxQty, bids.Max(b => b.Quantity));
             if (maxQty == 0) maxQty = 1;
 
-            float y = startY;
+            float midX = width / 2;
+            float colW = midX - 4;
+            float rowH = 16;
+            float headerH = 20;
             
-            // Asks (Reverse so highest price is top)
-            foreach(var ask in asks.AsEnumerable().Reverse())
+            // Column headers
+            using var hdrFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 9);
+            using var hdrPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+            
+            // Bids header (left)
+            canvas.DrawText("BID", 8, headerH - 6, hdrFont, hdrPaint);
+            canvas.DrawText("QTY", colW - 30, headerH - 6, hdrFont, hdrPaint);
+            
+            // Asks header (right)
+            canvas.DrawText("QTY", midX + 4, headerH - 6, hdrFont, hdrPaint);
+            canvas.DrawText("ASK", width - 40, headerH - 6, hdrFont, hdrPaint);
+            
+            // Separator line under headers
+            canvas.DrawLine(4, headerH, width - 4, headerH, _linePaint);
+            
+            // Center divider
+            using var divPaint = new SKPaint { Color = new SKColor(35, 40, 50), StrokeWidth = 1 };
+            canvas.DrawLine(midX, headerH, midX, height, divPaint);
+            
+            int maxRows = Math.Min(Math.Max(bids.Count, asks.Count), (int)((height - headerH - 4) / rowH));
+            
+            // Render rows
+            for (int i = 0; i < maxRows; i++)
             {
-                float barW = (ask.Quantity / maxQty) * width;
-                canvas.DrawRect(width - barW, y - rowH + 4, barW, rowH, _askPaint);
-                canvas.DrawText(ask.Price.ToString("F2"), 10, y, _itemFont, _askTextPaint);
-                canvas.DrawText(ask.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
-                y += rowH;
+                float y = headerH + 4 + i * rowH;
+                float textY = y + rowH - 3;
+                
+                // Bid (left column) — bars grow right-to-left from center
+                if (i < bids.Count)
+                {
+                    float barW = (bids[i].Quantity / maxQty) * colW;
+                    canvas.DrawRect(midX - 2 - barW, y, barW, rowH - 1, _bidPaint);
+                    canvas.DrawText(bids[i].Price.ToString("F2"), 6, textY, _itemFont, _bidTextPaint);
+                    
+                    string bidQty = bids[i].Quantity.ToString("F4");
+                    float qtyW = _itemFont.MeasureText(bidQty);
+                    canvas.DrawText(bidQty, midX - 6 - qtyW, textY, _itemFont, _headerTextPaint);
+                }
+                
+                // Ask (right column) — bars grow left-to-right from center
+                if (i < asks.Count)
+                {
+                    float barW = (asks[i].Quantity / maxQty) * colW;
+                    canvas.DrawRect(midX + 2, y, barW, rowH - 1, _askPaint);
+                    
+                    canvas.DrawText(asks[i].Quantity.ToString("F4"), midX + 6, textY, _itemFont, _headerTextPaint);
+                    
+                    string askPrice = asks[i].Price.ToString("F2");
+                    float priceW = _itemFont.MeasureText(askPrice);
+                    canvas.DrawText(askPrice, width - 6 - priceW, textY, _itemFont, _askTextPaint);
+                }
             }
-
-            y += 5;
-            canvas.DrawLine(10, y, width - 10, y, _linePaint);
-            y += 15;
-
-            foreach(var bid in bids)
+            
+            // Spread indicator at top center
+            if (bids.Count > 0 && asks.Count > 0)
             {
-                float barW = (bid.Quantity / maxQty) * width;
-                canvas.DrawRect(width - barW, y - rowH + 4, barW, rowH, _bidPaint);
-                canvas.DrawText(bid.Price.ToString("F2"), 10, y, _itemFont, _bidTextPaint);
-                canvas.DrawText(bid.Quantity.ToString("F4"), width / 2, y, _itemFont, _headerTextPaint);
-                y += rowH;
+                float spread = asks[0].Price - bids[0].Price;
+                float spreadPct = (spread / asks[0].Price) * 100;
+                string spreadText = $"Spread: {spread:F2} ({spreadPct:F3}%)";
+                using var spreadFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 9);
+                float spreadW = spreadFont.MeasureText(spreadText);
+                using var spreadPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+                canvas.DrawText(spreadText, (width - spreadW) / 2, height - 4, spreadFont, spreadPaint);
             }
         }
     }

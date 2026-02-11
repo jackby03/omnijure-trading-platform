@@ -33,6 +33,16 @@ public class PanelSystem
     private const float PanelGap = 2f;
     private const float ResizeEdgeWidth = 6f;
     
+    // Dock guide constants (VS-style)
+    private const float GuideButtonSize = 36f;
+    private const float GuideHitRadius = 22f;
+    private const float EdgeGuideMargin = 20f;
+    
+    // Cached layout for dock guides
+    private float _lastHeaderHeight;
+    private int _lastScreenWidth;
+    private int _lastScreenHeight;
+    
     // Resize state
     private DockablePanel? _resizingPanel;
     private ResizeEdge _resizeEdge;
@@ -40,15 +50,21 @@ public class PanelSystem
     private float _resizeStartSize;
     
     private enum ResizeEdge { None, Right, Left, Top, Bottom }
+    
+    // Bottom tab system
+    private const float TabBarHeight = 28f;
+    private string _activeBottomTabId = PanelDefinitions.ORDERBOOK;
+    private SKRect _bottomTabBarRect;
+    private List<(string id, SKRect rect)> _bottomTabRects = new();
 
     public IReadOnlyCollection<DockablePanel> Panels => _panels.Values;
 
     public PanelSystem()
     {
-        CreatePanel(PanelDefinitions.CHART);
-        CreatePanel(PanelDefinitions.ORDERBOOK);
-        CreatePanel(PanelDefinitions.TRADES);
-        CreatePanel(PanelDefinitions.POSITIONS);
+        foreach (var config in PanelDefinitions.Panels.Values)
+        {
+            CreatePanel(config.Id);
+        }
     }
 
     private void CreatePanel(string panelId)
@@ -57,11 +73,17 @@ public class PanelSystem
             return;
 
         var panel = new DockablePanel(config);
+        if (config.StartClosed)
+            panel.IsClosed = true;
         _panels[panelId] = panel;
     }
 
     public void Update(int screenWidth, int screenHeight, float headerHeight)
     {
+        _lastScreenWidth = screenWidth;
+        _lastScreenHeight = screenHeight;
+        _lastHeaderHeight = headerHeight;
+        
         float statusBarHeight = StatusBarRenderer.Height;
         float availableBottom = screenHeight - statusBarHeight;
         
@@ -90,13 +112,38 @@ public class PanelSystem
         }
 
         // ???????????????????????????????????????????????????????????
-        // PASO 3: Bottom panels (entre Left y Right)
+        // PASO 3: Bottom tab group (tabbed, only active panel gets bounds)
         // ???????????????????????????????????????????????????????????
-        foreach (var panel in _panels.Values.Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder))
+        var bottomTabs = _panels.Values
+            .Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed)
+            .OrderBy(p => p.DockOrder)
+            .ToList();
+
+        if (bottomTabs.Count > 0)
         {
-            float height = panel.IsCollapsed ? CollapsedWidth : panel.Height;
-            panel.Bounds = new SKRect(currentLeftX, currentBottomY - height + PanelGap, currentRightX, currentBottomY);
-            currentBottomY -= height;
+            // Ensure active tab is valid
+            if (!bottomTabs.Any(t => t.Config.Id == _activeBottomTabId))
+                _activeBottomTabId = bottomTabs[0].Config.Id;
+            
+            var activeTab = bottomTabs.First(t => t.Config.Id == _activeBottomTabId);
+            float contentHeight = activeTab.IsCollapsed ? CollapsedWidth : activeTab.Height;
+            float totalHeight = contentHeight + TabBarHeight;
+            
+            // Tab bar rect (above panel content)
+            _bottomTabBarRect = new SKRect(
+                currentLeftX, currentBottomY - totalHeight,
+                currentRightX, currentBottomY - totalHeight + TabBarHeight);
+            
+            // Active panel bounds (below tab bar, no panel header needed)
+            activeTab.Bounds = new SKRect(
+                currentLeftX, currentBottomY - contentHeight + PanelGap,
+                currentRightX, currentBottomY);
+            
+            currentBottomY -= totalHeight;
+        }
+        else
+        {
+            _bottomTabBarRect = SKRect.Empty;
         }
 
         // ???????????????????????????????????????????????????????????
@@ -108,9 +155,11 @@ public class PanelSystem
             centerPanel.Bounds = new SKRect(currentLeftX, headerHeight, currentRightX, currentBottomY);
         }
 
-        // Update handle positions for all visible panels
+        // Update handle positions for visible panels (skip inactive bottom tabs)
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed))
         {
+            if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
+                continue;
             UpdatePanelHandles(panel);
         }
     }
@@ -169,39 +218,349 @@ public class PanelSystem
             RenderPanel(canvas, centerPanel);
         }
         
-        // CAPA 2: Docked panels (Left/Right/Bottom) - render OVER center
-        foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel && !p.IsClosed && p.Position != PanelPosition.Center))
+        // CAPA 2: Bottom tab bar + active bottom panel
+        RenderBottomTabBar(canvas);
+        var activeBottomPanel = _panels.Values.FirstOrDefault(p => 
+            p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed && 
+            p.Config.Id == _activeBottomTabId && p != _draggingPanel);
+        if (activeBottomPanel != null)
+        {
+            RenderBottomPanelContent(canvas, activeBottomPanel);
+        }
+        
+        // CAPA 3: Docked panels (Left/Right only, bottom handled above)
+        foreach (var panel in _panels.Values.Where(p => !p.IsFloating && p != _draggingPanel && !p.IsClosed 
+            && p.Position != PanelPosition.Center && p.Position != PanelPosition.Bottom))
         {
             RenderPanel(canvas, panel);
         }
 
-        // CAPA 2.5: Resize edge indicators
+        // CAPA 3.5: Resize edge indicators
         RenderResizeEdges(canvas);
 
-        // CAPA 3: Floating panels (not dragging)
+        // CAPA 4: Floating panels (not dragging)
         foreach (var panel in _panels.Values.Where(p => p.IsFloating && p != _draggingPanel && !p.IsClosed))
         {
             RenderPanel(canvas, panel);
         }
     }
 
+    private void RenderBottomTabBar(SKCanvas canvas)
+    {
+        var bottomTabs = _panels.Values
+            .Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed)
+            .OrderBy(p => p.DockOrder)
+            .ToList();
+
+        if (bottomTabs.Count == 0 || _bottomTabBarRect.Width <= 0) return;
+
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            // Tab bar background
+            paint.Color = new SKColor(18, 21, 28);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(_bottomTabBarRect, paint);
+            
+            // Top border
+            paint.Color = new SKColor(40, 45, 55);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawLine(_bottomTabBarRect.Left, _bottomTabBarRect.Top, 
+                _bottomTabBarRect.Right, _bottomTabBarRect.Top, paint);
+
+            _bottomTabRects.Clear();
+            
+            using var tabFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            float tabX = _bottomTabBarRect.Left + 4;
+            float tabY = _bottomTabBarRect.Top + 2;
+            float tabH = TabBarHeight - 4;
+            
+            foreach (var tab in bottomTabs)
+            {
+                bool isActive = tab.Config.Id == _activeBottomTabId;
+                string label = tab.Config.DisplayName;
+                float labelW = tabFont.MeasureText(label);
+                float tabW = labelW + 28; // padding + icon space
+                
+                var tabRect = new SKRect(tabX, tabY, tabX + tabW, tabY + tabH);
+                _bottomTabRects.Add((tab.Config.Id, tabRect));
+                
+                // Tab background
+                if (isActive)
+                {
+                    paint.Style = SKPaintStyle.Fill;
+                    paint.Color = new SKColor(30, 34, 42);
+                    canvas.DrawRoundRect(new SKRoundRect(tabRect, 4, 4), paint);
+                    
+                    // Active indicator line at bottom
+                    paint.Color = new SKColor(56, 139, 253);
+                    canvas.DrawRect(tabX + 4, tabY + tabH - 2, tabW - 8, 2, paint);
+                }
+                
+                // Icon
+                SvgIconRenderer.DrawIcon(canvas, tab.Config.Icon, 
+                    tabX + 6, tabY + (tabH - 12) / 2, 12,
+                    isActive ? new SKColor(56, 139, 253) : new SKColor(100, 108, 118));
+                
+                // Label
+                paint.Style = SKPaintStyle.Fill;
+                paint.Color = isActive ? new SKColor(220, 225, 235) : new SKColor(100, 108, 118);
+                paint.IsAntialias = true;
+                canvas.DrawText(label, tabX + 22, tabY + tabH / 2 + 4, tabFont, paint);
+                
+                tabX += tabW + 2;
+            }
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private void RenderBottomPanelContent(SKCanvas canvas, DockablePanel panel)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            // Panel background (no header — tab bar replaces it)
+            paint.Color = new SKColor(18, 20, 24);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(panel.Bounds, paint);
+
+            // Border
+            paint.Color = new SKColor(35, 38, 45);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawRect(panel.Bounds, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+        
+        // Content bounds for bottom panel — no header offset since tab bar handles it
+        panel.ContentBounds = new SKRect(
+            panel.Bounds.Left + 8,
+            panel.Bounds.Top + 8,
+            panel.Bounds.Right - 8,
+            panel.Bounds.Bottom - 8
+        );
+    }
+
     /// <summary>
-    /// Phase 2: Dock preview + dragging panel (AFTER all content, highest z-index)
+    /// Phase 2: Dock guides + preview + dragging panel (AFTER all content, highest z-index)
     /// </summary>
     public void RenderOverlay(SKCanvas canvas, Action<SKCanvas, DockablePanel>? renderDraggingContent = null)
     {
-        // CAPA 6: Dock zone preview
-        if (_draggingPanel != null && _currentDockZone != null)
-        {
-            RenderDockZonePreview(canvas, _currentDockZone);
-        }
-
-        // CAPA 7: Dragging panel (z-index máximo)
         if (_draggingPanel != null)
         {
+            // Dim background
+            var paint = PaintPool.Instance.Rent();
+            try
+            {
+                paint.Color = new SKColor(0, 0, 0, 60);
+                paint.Style = SKPaintStyle.Fill;
+                canvas.DrawRect(0, 0, _lastScreenWidth, _lastScreenHeight, paint);
+            }
+            finally { PaintPool.Instance.Return(paint); }
+
+            // Dock zone preview (translucent highlight)
+            if (_currentDockZone != null)
+            {
+                RenderDockZonePreview(canvas, _currentDockZone);
+            }
+
+            // VS-style dock guides
+            RenderDockGuides(canvas);
+
+            // Dragging panel (z-index máximo)
             RenderDraggingPanel(canvas, _draggingPanel);
             renderDraggingContent?.Invoke(canvas, _draggingPanel);
         }
+    }
+
+    private void RenderDockGuides(SKCanvas canvas)
+    {
+        var chartArea = GetChartArea(_lastScreenWidth, _lastScreenHeight, _lastHeaderHeight);
+        float cx = chartArea.MidX;
+        float cy = chartArea.MidY;
+        float statusBarH = StatusBarRenderer.Height;
+        float availH = _lastScreenHeight - statusBarH;
+
+        // ???????????????????????????????????????????
+        // CENTER COMPASS (diamond layout inside chart)
+        // ???????????????????????????????????????????
+        
+        // Compass background
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            // Draw connecting diamond shape
+            paint.Color = new SKColor(30, 35, 45, 200);
+            paint.Style = SKPaintStyle.Fill;
+            
+            using var diamond = new SKPath();
+            diamond.MoveTo(cx, cy - 68);       // top
+            diamond.LineTo(cx + 68, cy);       // right
+            diamond.LineTo(cx, cy + 68);       // bottom
+            diamond.LineTo(cx - 68, cy);       // left
+            diamond.Close();
+            canvas.DrawPath(diamond, paint);
+            
+            paint.Color = new SKColor(60, 70, 85, 180);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawPath(diamond, paint);
+        }
+        finally { PaintPool.Instance.Return(paint); }
+
+        // Guide buttons on the compass
+        bool hoveredTop = _currentDockZone != null && DistanceTo(0, 0, 0, 0) >= 0 && // always render
+            _currentDockZone.PreviewRect.Top == chartArea.Top && _currentDockZone.PreviewRect.Bottom < chartArea.Bottom && _currentDockZone.PreviewRect.Bottom > chartArea.Top;
+        
+        RenderGuideButton(canvas, cx, cy - 50, PanelPosition.Top, _currentDockZone);
+        RenderGuideButton(canvas, cx, cy + 50, PanelPosition.Bottom, _currentDockZone);
+        RenderGuideButton(canvas, cx - 50, cy, PanelPosition.Left, _currentDockZone);
+        RenderGuideButton(canvas, cx + 50, cy, PanelPosition.Right, _currentDockZone);
+        RenderGuideButton(canvas, cx, cy, PanelPosition.Center, _currentDockZone);
+
+        // ???????????????????????????????????????????
+        // EDGE GUIDES (at screen borders)
+        // ???????????????????????????????????????????
+        float edgeCy = (_lastHeaderHeight + availH) / 2;
+        float edgeCx = _lastScreenWidth / 2f;
+        
+        RenderEdgeGuide(canvas, EdgeGuideMargin + GuideButtonSize / 2, edgeCy, PanelPosition.Left, _currentDockZone);
+        RenderEdgeGuide(canvas, _lastScreenWidth - EdgeGuideMargin - GuideButtonSize / 2, edgeCy, PanelPosition.Right, _currentDockZone);
+        RenderEdgeGuide(canvas, edgeCx, availH - EdgeGuideMargin - GuideButtonSize / 2, PanelPosition.Bottom, _currentDockZone);
+    }
+
+    private void RenderGuideButton(SKCanvas canvas, float cx, float cy, PanelPosition position, DockZone? activeZone)
+    {
+        float half = GuideButtonSize / 2;
+        var rect = new SKRect(cx - half, cy - half, cx + half, cy + half);
+        
+        bool isActive = activeZone != null && IsGuideForZone(cx, cy, position, activeZone);
+        
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            // Button background
+            paint.Color = isActive ? new SKColor(56, 139, 253, 240) : new SKColor(45, 52, 65, 220);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRoundRect(rect, 4, 4, paint);
+            
+            // Border
+            paint.Color = isActive ? new SKColor(100, 170, 255) : new SKColor(80, 90, 105);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1.5f;
+            canvas.DrawRoundRect(rect, 4, 4, paint);
+            
+            // Arrow icon
+            paint.Color = isActive ? SKColors.White : new SKColor(180, 190, 200);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 2.5f;
+            paint.StrokeCap = SKStrokeCap.Round;
+            
+            float s = 7; // arrow size
+            switch (position)
+            {
+                case PanelPosition.Top:
+                    canvas.DrawLine(cx, cy - s, cx, cy + s, paint);
+                    canvas.DrawLine(cx - s, cy - s + 4, cx, cy - s, paint);
+                    canvas.DrawLine(cx + s, cy - s + 4, cx, cy - s, paint);
+                    break;
+                case PanelPosition.Bottom:
+                    canvas.DrawLine(cx, cy - s, cx, cy + s, paint);
+                    canvas.DrawLine(cx - s, cy + s - 4, cx, cy + s, paint);
+                    canvas.DrawLine(cx + s, cy + s - 4, cx, cy + s, paint);
+                    break;
+                case PanelPosition.Left:
+                    canvas.DrawLine(cx - s, cy, cx + s, cy, paint);
+                    canvas.DrawLine(cx - s + 4, cy - s, cx - s, cy, paint);
+                    canvas.DrawLine(cx - s + 4, cy + s, cx - s, cy, paint);
+                    break;
+                case PanelPosition.Right:
+                    canvas.DrawLine(cx - s, cy, cx + s, cy, paint);
+                    canvas.DrawLine(cx + s - 4, cy - s, cx + s, cy, paint);
+                    canvas.DrawLine(cx + s - 4, cy + s, cx + s, cy, paint);
+                    break;
+                case PanelPosition.Center:
+                    // Grid/window icon
+                    paint.StrokeWidth = 2;
+                    float r = 8;
+                    canvas.DrawRoundRect(new SKRect(cx - r, cy - r, cx + r, cy + r), 2, 2, paint);
+                    canvas.DrawLine(cx, cy - r, cx, cy + r, paint);
+                    canvas.DrawLine(cx - r, cy, cx + r, cy, paint);
+                    break;
+            }
+        }
+        finally { PaintPool.Instance.Return(paint); }
+    }
+
+    private void RenderEdgeGuide(SKCanvas canvas, float cx, float cy, PanelPosition position, DockZone? activeZone)
+    {
+        float half = GuideButtonSize / 2;
+        var rect = new SKRect(cx - half, cy - half, cx + half, cy + half);
+        
+        bool isActive = activeZone != null && IsEdgeGuideActive(cx, cy, position, activeZone);
+        
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            // Pill-shaped background
+            paint.Color = isActive ? new SKColor(56, 139, 253, 220) : new SKColor(35, 40, 50, 200);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRoundRect(rect, 6, 6, paint);
+            
+            paint.Color = isActive ? new SKColor(100, 170, 255) : new SKColor(60, 70, 85);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawRoundRect(rect, 6, 6, paint);
+            
+            // Arrow
+            paint.Color = isActive ? SKColors.White : new SKColor(160, 170, 180);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 2.5f;
+            paint.StrokeCap = SKStrokeCap.Round;
+            
+            float s = 8;
+            switch (position)
+            {
+                case PanelPosition.Left:
+                    canvas.DrawLine(cx + s, cy, cx - s, cy, paint);
+                    canvas.DrawLine(cx - s + 4, cy - 5, cx - s, cy, paint);
+                    canvas.DrawLine(cx - s + 4, cy + 5, cx - s, cy, paint);
+                    break;
+                case PanelPosition.Right:
+                    canvas.DrawLine(cx - s, cy, cx + s, cy, paint);
+                    canvas.DrawLine(cx + s - 4, cy - 5, cx + s, cy, paint);
+                    canvas.DrawLine(cx + s - 4, cy + 5, cx + s, cy, paint);
+                    break;
+                case PanelPosition.Bottom:
+                    canvas.DrawLine(cx, cy - s, cx, cy + s, paint);
+                    canvas.DrawLine(cx - 5, cy + s - 4, cx, cy + s, paint);
+                    canvas.DrawLine(cx + 5, cy + s - 4, cx, cy + s, paint);
+                    break;
+            }
+        }
+        finally { PaintPool.Instance.Return(paint); }
+    }
+
+    private bool IsGuideForZone(float gx, float gy, PanelPosition guidePos, DockZone zone)
+    {
+        if (zone.Position != guidePos) return false;
+        var chartArea = GetChartArea(_lastScreenWidth, _lastScreenHeight, _lastHeaderHeight);
+        // Center compass zones have preview rects relative to chart area
+        return zone.PreviewRect.Width < _lastScreenWidth * 0.5f || zone.PreviewRect.Height < (_lastScreenHeight * 0.5f);
+    }
+    
+    private bool IsEdgeGuideActive(float gx, float gy, PanelPosition guidePos, DockZone zone)
+    {
+        if (zone.Position != guidePos) return false;
+        // Edge zones span full width/height
+        return zone.PreviewRect.Width >= _lastScreenWidth * 0.5f || zone.PreviewRect.Height >= (_lastScreenHeight * 0.5f);
     }
 
     private void RenderPanel(SKCanvas canvas, DockablePanel panel)
@@ -449,10 +808,13 @@ public class PanelSystem
         {
             foreach (var panel in _panels.Values.Where(p => !p.IsClosed && !p.IsFloating && !p.IsCollapsed && p.Position != PanelPosition.Center))
             {
+                // Skip inactive bottom tabs
+                if (panel.Position == PanelPosition.Bottom && panel.Config.Id != _activeBottomTabId)
+                    continue;
+
                 var b = panel.Bounds;
                 bool isActive = _resizingPanel == panel;
                 
-                // Determine the edge to highlight
                 SKRect edgeRect = default;
                 switch (panel.Position)
                 {
@@ -463,13 +825,12 @@ public class PanelSystem
                         edgeRect = new SKRect(b.Left - 1, b.Top, b.Left + 1, b.Bottom);
                         break;
                     case PanelPosition.Bottom:
-                        edgeRect = new SKRect(b.Left, b.Top - 1, b.Right, b.Top + 1);
+                        // Use tab bar top edge for resize indicator
+                        float topEdge = _bottomTabBarRect.Height > 0 ? _bottomTabBarRect.Top : b.Top;
+                        edgeRect = new SKRect(b.Left, topEdge - 1, b.Right, topEdge + 1);
                         break;
                 }
 
-                // Hover detection for edge
-                bool isHovered = !isActive && GetResizeEdge(panel, _hoveredPanel != null ? 0 : 0, 0) != ResizeEdge.None;
-                
                 paint.Color = isActive ? new SKColor(70, 140, 255, 180) : new SKColor(50, 55, 65, 100);
                 paint.Style = SKPaintStyle.Fill;
                 canvas.DrawRect(edgeRect, paint);
@@ -486,25 +847,21 @@ public class PanelSystem
         var paint = PaintPool.Instance.Rent();
         try
         {
-            // ? SOMBRA MUY PROMINENTE (para que se vea claramente sobre todo)
-            paint.Color = new SKColor(0, 0, 0, 180); // Más opaca
-            paint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 30); // Más grande
+            // Shadow
+            paint.Color = new SKColor(0, 0, 0, 120);
+            paint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 16);
             paint.Style = SKPaintStyle.Fill;
-            
-            // Sombra desplazada
             var shadowRect = new SKRect(
-                panel.Bounds.Left + 12, 
-                panel.Bounds.Top + 12, 
-                panel.Bounds.Right + 12, 
-                panel.Bounds.Bottom + 12
+                panel.Bounds.Left + 6, panel.Bounds.Top + 6, 
+                panel.Bounds.Right + 6, panel.Bounds.Bottom + 6
             );
             canvas.DrawRoundRect(shadowRect, 6, 6, paint);
             
-            // ? Borde brillante para destacar aún más
+            // Accent border
             paint.MaskFilter = null;
-            paint.Color = new SKColor(70, 140, 255, 255);
+            paint.Color = new SKColor(56, 139, 253, 200);
             paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = 3;
+            paint.StrokeWidth = 2;
             canvas.DrawRoundRect(panel.Bounds, 6, 6, paint);
         }
         finally
@@ -512,7 +869,6 @@ public class PanelSystem
             PaintPool.Instance.Return(paint);
         }
 
-        // Render panel normal encima de la sombra
         RenderPanel(canvas, panel);
     }
 
@@ -521,56 +877,16 @@ public class PanelSystem
         var paint = PaintPool.Instance.Rent();
         try
         {
-            // ? FONDO SEMI-TRANSPARENTE MÁS VISIBLE (z-index superior)
-            float pulse = (float)(Math.Sin(DateTime.Now.Millisecond / 150.0) * 30 + 100);
-            
-            paint.Color = new SKColor(70, 140, 255, (byte)pulse);
+            // Translucent fill
+            paint.Color = new SKColor(56, 139, 253, 50);
             paint.Style = SKPaintStyle.Fill;
-            canvas.DrawRect(zone.PreviewRect, paint);
+            canvas.DrawRoundRect(zone.PreviewRect, 4, 4, paint);
 
-            // ? BORDE ANIMADO MÁS GRUESO Y BRILLANTE
-            paint.Color = new SKColor(70, 140, 255, 255);
+            // Solid border
+            paint.Color = new SKColor(56, 139, 253, 200);
             paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = 4; // Más grueso
-            paint.PathEffect = SKPathEffect.CreateDash(new float[] { 16, 8 }, 0);
-            canvas.DrawRect(zone.PreviewRect, paint);
-
-            // ? ICONO GRANDE Y CLARO
-            using var iconFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 60);
-            paint.PathEffect = null;
-            paint.Color = new SKColor(255, 255, 255, 255); // Blanco puro
-            paint.Style = SKPaintStyle.Fill;
-            
-            string icon = zone.Position switch
-            {
-                PanelPosition.Left => "?",
-                PanelPosition.Right => "?",
-                PanelPosition.Bottom => "?",
-                PanelPosition.Top => "?",
-                PanelPosition.Center => "?",
-                _ => "?"
-            };
-            
-            float iconWidth = TextMeasureCache.Instance.MeasureText(icon, iconFont);
-            canvas.DrawText(icon, zone.PreviewRect.MidX - iconWidth / 2, 
-                zone.PreviewRect.MidY + 24, iconFont, paint);
-
-            // ? TEXTO MÁS GRANDE Y LEGIBLE
-            using var textFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 24);
-            string text = zone.Position switch
-            {
-                PanelPosition.Left => "DOCK LEFT",
-                PanelPosition.Right => "DOCK RIGHT",
-                PanelPosition.Bottom => "DOCK BOTTOM",
-                PanelPosition.Top => "DOCK TOP",
-                PanelPosition.Center => "DOCK CENTER",
-                _ => "DOCK HERE"
-            };
-            
-            float textWidth = TextMeasureCache.Instance.MeasureText(text, textFont);
-            paint.Color = new SKColor(255, 255, 255, 255);
-            canvas.DrawText(text, zone.PreviewRect.MidX - textWidth / 2, 
-                zone.PreviewRect.MidY + 70, textFont, paint);
+            paint.StrokeWidth = 2;
+            canvas.DrawRoundRect(zone.PreviewRect, 4, 4, paint);
         }
         finally
         {
@@ -582,9 +898,34 @@ public class PanelSystem
     {
         _mouseDownPosition = new SKPoint(x, y);
         
-        // Check resize edges first
+        // Check bottom tab bar clicks — switch tab AND prepare tear-off drag
+        if (_bottomTabBarRect.Contains(x, y))
+        {
+            foreach (var (id, rect) in _bottomTabRects)
+            {
+                if (rect.Contains(x, y))
+                {
+                    _activeBottomTabId = id;
+                    // Prepare potential tear-off drag (like VS tab dragging)
+                    var tabPanel = GetPanel(id);
+                    if (tabPanel != null && tabPanel.Config.CanFloat)
+                    {
+                        _potentialDragPanel = tabPanel;
+                        _dragOffset = new SKPoint(
+                            tabPanel.Width / 2,
+                            TabBarHeight / 2);
+                    }
+                    return;
+                }
+            }
+            return;
+        }
+        
+        // Check resize edges
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed && !p.IsFloating && !p.IsCollapsed && p.Position != PanelPosition.Center))
         {
+            if (panel.Position == PanelPosition.Bottom && panel.Config.Id != _activeBottomTabId)
+                continue;
             var edge = GetResizeEdge(panel, x, y);
             if (edge != ResizeEdge.None)
             {
@@ -599,7 +940,10 @@ public class PanelSystem
         // Check handles
         foreach (var panel in _panels.Values.OrderByDescending(p => p.IsFloating))
         {
-            if (panel.IsClosed) continue; // ? Ignorar paneles cerrados
+            if (panel.IsClosed) continue;
+            // Skip inactive bottom tabs (they don't have valid bounds)
+            if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
+                continue;
             
             // Close handle - CERRAR panel (no flotar)
             if (panel.Config.CanClose && panel.CloseHandleBounds.Contains(x, y))
@@ -634,17 +978,24 @@ public class PanelSystem
         {
             if (_currentDockZone != null)
             {
-                // ? Hay zona válida - aplicar docking
                 _draggingPanel.Position = _currentDockZone.Position;
                 _draggingPanel.IsFloating = false;
                 _draggingPanel.DockOrder = GetNextDockOrder(_currentDockZone.Position);
+                
+                // Auto-activate as the active tab when docking to bottom
+                if (_currentDockZone.Position == PanelPosition.Bottom)
+                    _activeBottomTabId = _draggingPanel.Config.Id;
             }
             else
             {
-                // ? NO hay zona válida - RESTAURAR posición original
+                // No valid zone — restore to original position
                 _draggingPanel.Position = _originalPosition;
                 _draggingPanel.IsFloating = _originalIsFloating;
                 _draggingPanel.Bounds = _originalBounds;
+                
+                // Re-activate as bottom tab if restoring to bottom
+                if (_originalPosition == PanelPosition.Bottom && !_originalIsFloating)
+                    _activeBottomTabId = _draggingPanel.Config.Id;
             }
         }
 
@@ -686,6 +1037,9 @@ public class PanelSystem
 
             foreach (var panel in _panels.Values.OrderByDescending(p => p.IsFloating))
             {
+                if (panel.IsClosed) continue;
+                if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
+                    continue;
                 if (panel.Bounds.Contains(x, y))
                 {
                     _hoveredPanel = panel;
@@ -725,8 +1079,25 @@ public class PanelSystem
                 if (!_draggingPanel.IsFloating)
                 {
                     _draggingPanel.IsFloating = true;
-                    _draggingPanel.FloatingWidth = _draggingPanel.Bounds.Width;
-                    _draggingPanel.FloatingHeight = _draggingPanel.Bounds.Height;
+                    
+                    // For bottom tabs: use default floating size, switch to next tab
+                    if (_draggingPanel.Position == PanelPosition.Bottom)
+                    {
+                        _draggingPanel.FloatingWidth = Math.Min(_draggingPanel.Width, 400);
+                        _draggingPanel.FloatingHeight = Math.Min(_draggingPanel.Height, 300);
+                        
+                        // Switch active tab to next available
+                        var remainingTabs = _panels.Values
+                            .Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed && p != _draggingPanel)
+                            .OrderBy(p => p.DockOrder).ToList();
+                        if (remainingTabs.Count > 0)
+                            _activeBottomTabId = remainingTabs[0].Config.Id;
+                    }
+                    else
+                    {
+                        _draggingPanel.FloatingWidth = _draggingPanel.Bounds.Width;
+                        _draggingPanel.FloatingHeight = _draggingPanel.Bounds.Height;
+                    }
                 }
             }
         }
@@ -746,22 +1117,59 @@ public class PanelSystem
 
     private DockZone? CalculateDockZone(float x, float y, int screenWidth, int screenHeight, float headerHeight)
     {
-        const float EdgeThreshold = 100;
-        const float Margin = 40;
+        float statusBarH = StatusBarRenderer.Height;
+        float availH = screenHeight - statusBarH;
+        
+        // Calculate center area (chart panel bounds)
+        var chartArea = GetChartArea(screenWidth, screenHeight, headerHeight);
+        float cx = chartArea.MidX;
+        float cy = chartArea.MidY;
 
-        if (x < EdgeThreshold)
-            return new DockZone(PanelPosition.Left, 
-                new SKRect(Margin, headerHeight + Margin, screenWidth * 0.25f, screenHeight - Margin));
+        // Center compass guides (inside chart area)
+        if (DistanceTo(x, y, cx, cy - 50) < GuideHitRadius) // Top guide
+            return new DockZone(PanelPosition.Top, 
+                new SKRect(chartArea.Left, chartArea.Top, chartArea.Right, chartArea.MidY));
         
-        if (x > screenWidth - EdgeThreshold)
-            return new DockZone(PanelPosition.Right, 
-                new SKRect(screenWidth * 0.75f, headerHeight + Margin, screenWidth - Margin, screenHeight - Margin));
+        if (DistanceTo(x, y, cx, cy + 50) < GuideHitRadius) // Bottom guide
+            return new DockZone(PanelPosition.Bottom,
+                new SKRect(chartArea.Left, chartArea.MidY, chartArea.Right, chartArea.Bottom));
         
-        if (y > screenHeight - EdgeThreshold)
-            return new DockZone(PanelPosition.Bottom, 
-                new SKRect(Margin, screenHeight * 0.75f, screenWidth - Margin, screenHeight - Margin));
+        if (DistanceTo(x, y, cx - 50, cy) < GuideHitRadius) // Left guide
+            return new DockZone(PanelPosition.Left,
+                new SKRect(chartArea.Left, chartArea.Top, chartArea.MidX, chartArea.Bottom));
+        
+        if (DistanceTo(x, y, cx + 50, cy) < GuideHitRadius) // Right guide
+            return new DockZone(PanelPosition.Right,
+                new SKRect(chartArea.MidX, chartArea.Top, chartArea.Right, chartArea.Bottom));
+        
+        if (DistanceTo(x, y, cx, cy) < GuideHitRadius) // Center guide
+            return new DockZone(PanelPosition.Center,
+                chartArea);
+
+        // Edge guides (at screen edges)
+        float edgeCy = (headerHeight + availH) / 2;
+
+        if (DistanceTo(x, y, EdgeGuideMargin + GuideButtonSize / 2, edgeCy) < GuideHitRadius)
+            return new DockZone(PanelPosition.Left,
+                new SKRect(0, headerHeight, screenWidth * 0.25f, availH));
+        
+        if (DistanceTo(x, y, screenWidth - EdgeGuideMargin - GuideButtonSize / 2, edgeCy) < GuideHitRadius)
+            return new DockZone(PanelPosition.Right,
+                new SKRect(screenWidth * 0.75f, headerHeight, screenWidth, availH));
+        
+        float edgeCx = screenWidth / 2f;
+        if (DistanceTo(x, y, edgeCx, availH - EdgeGuideMargin - GuideButtonSize / 2) < GuideHitRadius)
+            return new DockZone(PanelPosition.Bottom,
+                new SKRect(0, availH * 0.7f, screenWidth, availH));
 
         return null;
+    }
+
+    private static float DistanceTo(float x1, float y1, float x2, float y2)
+    {
+        float dx = x1 - x2;
+        float dy = y1 - y2;
+        return MathF.Sqrt(dx * dx + dy * dy);
     }
 
     private int GetNextDockOrder(PanelPosition position)
@@ -786,7 +1194,17 @@ public class PanelSystem
 
             if (panel.Position == PanelPosition.Left) leftMargin += width;
             if (panel.Position == PanelPosition.Right) rightMargin += width;
-            if (panel.Position == PanelPosition.Bottom) bottomMargin += height;
+        }
+        
+        // Bottom: only count active tab + tab bar height
+        var bottomTabs = _panels.Values
+            .Where(p => p.Position == PanelPosition.Bottom && !p.IsFloating && !p.IsClosed)
+            .ToList();
+        if (bottomTabs.Count > 0)
+        {
+            var activeTab = bottomTabs.FirstOrDefault(t => t.Config.Id == _activeBottomTabId) ?? bottomTabs[0];
+            float tabContentH = activeTab.IsCollapsed ? CollapsedWidth : activeTab.Height;
+            bottomMargin = tabContentH + TabBarHeight;
         }
 
         return new SKRect(leftMargin, headerHeight, screenWidth - rightMargin, availableBottom - bottomMargin);
@@ -797,6 +1215,27 @@ public class PanelSystem
     public bool IsResizing => _resizingPanel != null;
     public bool IsPanelBeingDragged(DockablePanel panel) => _draggingPanel == panel;
     public DockablePanel? GetPanel(string panelId) => _panels.GetValueOrDefault(panelId);
+    
+    public void TogglePanel(string panelId)
+    {
+        var panel = GetPanel(panelId);
+        if (panel != null)
+        {
+            panel.IsClosed = !panel.IsClosed;
+            if (!panel.IsClosed)
+            {
+                panel.IsCollapsed = false;
+                // If it's a bottom panel, make it the active tab
+                if (panel.Position == PanelPosition.Bottom)
+                    _activeBottomTabId = panelId;
+            }
+        }
+    }
+    
+    public bool IsBottomTabActive(DockablePanel panel)
+    {
+        return panel.Position != PanelPosition.Bottom || panel.Config.Id == _activeBottomTabId;
+    }
     
     private ResizeEdge GetResizeEdge(DockablePanel panel, float x, float y)
     {
@@ -815,8 +1254,9 @@ public class PanelSystem
                     return ResizeEdge.Left;
                 break;
             case PanelPosition.Bottom:
-                // Top edge of bottom panel
-                if (y >= b.Top - ResizeEdgeWidth && y <= b.Top + ResizeEdgeWidth && x >= b.Left && x <= b.Right)
+                // Top edge of bottom tab area (use tab bar top, not panel top)
+                float topEdge = _bottomTabBarRect.Height > 0 ? _bottomTabBarRect.Top : b.Top;
+                if (y >= topEdge - ResizeEdgeWidth && y <= topEdge + ResizeEdgeWidth && x >= b.Left && x <= b.Right)
                     return ResizeEdge.Top;
                 break;
             case PanelPosition.Top:

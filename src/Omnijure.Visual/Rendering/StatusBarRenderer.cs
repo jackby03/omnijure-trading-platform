@@ -13,9 +13,13 @@ public class StatusBarRenderer
     private int _fps;
     private string _connectionStatus = "Connected";
     private string _exchangeName = "Binance";
+    private int _latencyMs;
+    private string _balance = "---";
 
     public void UpdateFps(int fps) => _fps = fps;
     public void UpdateConnection(string status) => _connectionStatus = status;
+    public void UpdateLatency(int ms) => _latencyMs = ms;
+    public void UpdateBalance(string balance) => _balance = balance;
 
     public void Render(SKCanvas canvas, float screenWidth, float screenHeight)
     {
@@ -69,6 +73,28 @@ public class StatusBarRenderer
 
             paint.Color = white;
             canvas.DrawText(_connectionStatus, leftX, textY, font, paint);
+            leftX += font.MeasureText(_connectionStatus) + 12;
+
+            // Separator
+            paint.Color = new SKColor(0, 100, 180);
+            canvas.DrawLine(leftX, y + 4, leftX, y + Height - 4, paint);
+            leftX += 10;
+
+            // Latency
+            string latencyText = $"{_latencyMs}ms";
+            paint.Color = _latencyMs < 100 ? new SKColor(80, 250, 123) : new SKColor(255, 200, 50);
+            canvas.DrawText(latencyText, leftX, textY, font, paint);
+            leftX += font.MeasureText(latencyText) + 12;
+
+            // Separator
+            paint.Color = new SKColor(0, 100, 180);
+            canvas.DrawLine(leftX, y + 4, leftX, y + Height - 4, paint);
+            leftX += 10;
+
+            // Balance
+            string balanceText = $"Balance: ${_balance}";
+            paint.Color = white;
+            canvas.DrawText(balanceText, leftX, textY, font, paint);
 
             // Right side
             float rightX = screenWidth - 10;

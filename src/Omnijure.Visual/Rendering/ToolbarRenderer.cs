@@ -56,8 +56,8 @@ public class ToolbarRenderer
         _fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
     }
 
-    // Menu items for trading platform
-    private static readonly string[] MenuItems = ["Markets", "Charts", "Strategy", "Tools", "View"];
+    // Menu items for Omnijure TDS
+    private static readonly string[] MenuItems = ["Trading", "Bots", "AI", "Markets", "View", "Scripting"];
     
     // Win32 P/Invoke
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT point);

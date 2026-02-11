@@ -198,6 +198,8 @@ public class LayoutManager
     {
         _panelSystem.UpdateChartTitle(symbol, interval, price);
     }
+    
+    public void TogglePanel(string panelId) => _panelSystem.TogglePanel(panelId);
 
     private void RenderEmptyState(SKCanvas canvas, SKRect area)
     {
@@ -244,7 +246,8 @@ public class LayoutManager
         {
             if (panel.IsClosed || panel.IsCollapsed) continue;
             if (panel.Config.Id == PanelDefinitions.CHART) continue;
-            if (_panelSystem.IsPanelBeingDragged(panel)) continue; // Skip — rendered in overlay
+            if (_panelSystem.IsPanelBeingDragged(panel)) continue;
+            if (!_panelSystem.IsBottomTabActive(panel)) continue; // Skip inactive bottom tabs
 
             RenderSinglePanelContent(canvas, panel);
         }
@@ -268,10 +271,22 @@ public class LayoutManager
                 _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades);
                 break;
             case PanelDefinitions.POSITIONS:
-                _sidebar.RenderPositions(canvas, contentWidth, contentHeight);
+                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "No open positions", "Positions will appear here when trading");
+                break;
+            case PanelDefinitions.AI_ASSISTANT:
+                RenderAIAssistantPanel(canvas, contentWidth, contentHeight);
+                break;
+            case PanelDefinitions.PORTFOLIO:
+                RenderPortfolioPanel(canvas, contentWidth, contentHeight);
+                break;
+            case PanelDefinitions.SCRIPT_EDITOR:
+                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "Script Editor", "Pine Script \u2022 C# \u2022 Python");
                 break;
             case PanelDefinitions.ALERTS:
-                RenderAlertsPanel(canvas, contentWidth, contentHeight);
+                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "No active alerts", "Create alerts from the chart");
+                break;
+            case PanelDefinitions.LOGS:
+                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "Console", "Bot execution logs will appear here");
                 break;
         }
 
@@ -288,14 +303,99 @@ public class LayoutManager
         RenderSinglePanelContent(canvas, panel);
     }
 
-    private void RenderAlertsPanel(SKCanvas canvas, float width, float height)
+    private void RenderAIAssistantPanel(SKCanvas canvas, float width, float height)
     {
         var paint = PaintPool.Instance.Rent();
         try
         {
-            using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
-            paint.Color = new SKColor(160, 165, 175);
-            canvas.DrawText("No active alerts", 10, 30, font, paint);
+            using var fontBold = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 13);
+            using var fontNormal = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            
+            paint.IsAntialias = true;
+            paint.Color = new SKColor(70, 140, 255);
+            canvas.DrawText("\u2726 Omnijure AI", 12, 20, fontBold, paint);
+            
+            paint.Color = new SKColor(100, 105, 115);
+            canvas.DrawText("Ask about patterns, strategies, or analysis", 12, 40, fontNormal, paint);
+            
+            // Chat area
+            paint.Color = new SKColor(25, 28, 35);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRoundRect(new SKRect(8, 54, width - 8, height - 50), 6, 6, paint);
+            
+            paint.Color = new SKColor(70, 75, 85);
+            canvas.DrawText("No messages yet", 20, 82, fontNormal, paint);
+            
+            // Input box
+            paint.Color = new SKColor(30, 34, 42);
+            canvas.DrawRoundRect(new SKRect(8, height - 42, width - 8, height - 8), 6, 6, paint);
+            
+            paint.Color = new SKColor(80, 85, 95);
+            canvas.DrawText("Ask Omnijure AI...", 16, height - 20, fontNormal, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private void RenderPortfolioPanel(SKCanvas canvas, float width, float height)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var fontBold = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 11);
+            using var fontNormal = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            
+            paint.IsAntialias = true;
+            float y = 14;
+            
+            paint.Color = new SKColor(130, 135, 145);
+            canvas.DrawText("ACCOUNTS", 10, y, fontBold, paint);
+            y += 24;
+            
+            paint.Color = new SKColor(46, 204, 113);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawCircle(18, y - 4, 4, paint);
+            paint.Color = new SKColor(200, 205, 215);
+            canvas.DrawText("Binance Spot", 28, y, fontNormal, paint);
+            y += 28;
+            
+            paint.Color = new SKColor(130, 135, 145);
+            canvas.DrawText("ACTIVE BOTS", 10, y, fontBold, paint);
+            y += 22;
+            paint.Color = new SKColor(80, 85, 95);
+            canvas.DrawText("No active bots", 10, y, fontNormal, paint);
+            y += 28;
+            
+            paint.Color = new SKColor(130, 135, 145);
+            canvas.DrawText("DATASETS", 10, y, fontBold, paint);
+            y += 22;
+            paint.Color = new SKColor(80, 85, 95);
+            canvas.DrawText("No loaded datasets", 10, y, fontNormal, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private void RenderPlaceholderPanel(SKCanvas canvas, float width, float height, string title, string subtitle)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var fontTitle = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 13);
+            using var fontSub = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
+            
+            paint.IsAntialias = true;
+            paint.Color = new SKColor(110, 115, 125);
+            float tw = TextMeasureCache.Instance.MeasureText(title, fontTitle);
+            canvas.DrawText(title, (width - tw) / 2, height / 2 - 8, fontTitle, paint);
+            
+            paint.Color = new SKColor(70, 75, 85);
+            float sw = TextMeasureCache.Instance.MeasureText(subtitle, fontSub);
+            canvas.DrawText(subtitle, (width - sw) / 2, height / 2 + 14, fontSub, paint);
         }
         finally
         {
