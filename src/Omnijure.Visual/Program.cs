@@ -337,9 +337,22 @@ public static partial class Program
             return;
         }
 
-        // Panel scroll (Portfolio, Positions, AI Assistant, etc.)
+        // Panel scroll (Portfolio, Positions, AI Assistant, Alerts, Console, etc.)
         if (_layout.HandlePanelScroll(_mousePos.X, _mousePos.Y, arg2.Y))
             return;
+
+        // Scroll on price axis = vertical price scale (like TradingView)
+        if (_layout.GetPriceAxisRect().Contains(_mousePos.X, _mousePos.Y))
+        {
+            _autoScaleY = false;
+            float factor = arg2.Y > 0 ? 0.9f : 1.1f;
+            float mid = (_viewMinY + _viewMaxY) / 2.0f;
+            float range = (_viewMaxY - _viewMinY) * factor;
+            if (range < 0.00001f) range = 0.00001f;
+            _viewMinY = mid - range / 2.0f;
+            _viewMaxY = mid + range / 2.0f;
+            return;
+        }
 
         if (arg2.Y > 0) _zoom *= 1.1f;
         else _zoom *= 0.9f;
@@ -504,25 +517,28 @@ public static partial class Program
                 return;
             }
 
-            _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
-            if (_layout.IsResizingLeft || _layout.IsResizingRight) return;
+            // Check chart interactions BEFORE panel system (so panel edge resize doesn't steal chart pan)
+            if (_layout.GetPriceAxisRect().Contains(_mousePos.X, _mousePos.Y))
+            {
+                _isResizingPrice = true;
+                _autoScaleY = false;
+                return;
+            }
 
-            // Handle drawing tool interaction on chart
             if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _drawingState.ActiveTool != Omnijure.Visual.Drawing.DrawingTool.None)
             {
                 HandleDrawingToolClick();
                 return;
             }
 
-            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _mousePos.X > _layout.ChartRect.Right - 70)
-            {
-                _isResizingPrice = true;
-                _autoScaleY = false;
-            }
-            else if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
+            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
             {
                 _isDragging = true;
+                return;
             }
+
+            // Panel system handles: panel drag handles, tab clicks, panel edge resize
+            _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
         }
         else if (arg2 == MouseButton.Right)
         {
@@ -583,16 +599,58 @@ public static partial class Program
             return;
         }
 
+        // Chart price axis drag has highest priority (already committed)
+        if (_isResizingPrice)
+        {
+            float sensitivity = 0.005f;
+            float factor = 1.0f + (deltaY * sensitivity);
+
+            float mid = (_viewMinY + _viewMaxY) / 2.0f;
+            float range = (_viewMaxY - _viewMinY);
+            float newRange = range * factor;
+
+            if (newRange < 0.00001f) newRange = 0.00001f;
+
+            _viewMinY = mid - newRange / 2.0f;
+            _viewMaxY = mid + newRange / 2.0f;
+            _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
+            return;
+        }
+
+        // Chart pan/drag has priority over panel system
+        if (_isDragging)
+        {
+            // Horizontal Pan (TradingView-style: allow free scrolling into future)
+            _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom));
+
+            // Vertical Pan
+            if (System.Math.Abs(deltaY) > 0.5f)
+            {
+                _autoScaleY = false;
+                float range = _viewMaxY - _viewMinY;
+                float pxHeight = _window.Size.Y;
+                if (pxHeight > 0)
+                {
+                    float pricePerPx = range / pxHeight;
+                    float priceDelta = deltaY * pricePerPx;
+                    _viewMinY += priceDelta;
+                    _viewMaxY += priceDelta;
+                }
+            }
+            _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
+            return;
+        }
+
         // Manejar movimiento de paneles (drag & drop)
         _layout.HandleMouseMove(pos.X, pos.Y, deltaX, _window.Size.X, _window.Size.Y);
-        
-        // Si está arrastrando o redimensionando panel, bloquear otras interacciones
+
+        // Si esta arrastrando o redimensionando panel, bloquear otras interacciones
         if (_layout.IsDraggingPanel || _layout.IsResizingPanel)
         {
             _lastMousePos = _mousePos;
             return;
         }
-        
+
         // If a dropdown is open, block chart dragging
         if (_uiDropdowns.Any(d => d.IsOpen))
         {
@@ -600,21 +658,7 @@ public static partial class Program
              return;
         }
 
-        if (_isResizingPrice)
-        {
-            float sensitivity = 0.005f;
-            float factor = 1.0f + (deltaY * sensitivity);
-            
-            float mid = (_viewMinY + _viewMaxY) / 2.0f;
-            float range = (_viewMaxY - _viewMinY);
-            float newRange = range * factor;
-            
-            if (newRange < 0.00001f) newRange = 0.00001f;
-            
-            _viewMinY = mid - newRange / 2.0f;
-            _viewMaxY = mid + newRange / 2.0f;
-        }
-        else if (_drawingState.CurrentDrawing != null && _layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
+        if (_drawingState.CurrentDrawing != null && _layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
         {
             // Update current drawing (e.g., trend line endpoint) as mouse moves
             float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
@@ -643,29 +687,6 @@ public static partial class Program
                 if (_drawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
                 {
                     trendLine.End = (candleIndex, price);
-                }
-            }
-        }
-        else if (_isDragging)
-        {
-            // Horizontal Pan (TradingView-style: allow free scrolling into future)
-            _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom));
-            
-            // Vertical Pan
-            if (System.Math.Abs(deltaY) > 0.5f)
-            {
-                _autoScaleY = false;
-                // Map pixel delta to price
-                // We need current range to know scale
-                float range = _viewMaxY - _viewMinY;
-                float pxHeight = _window.Size.Y;
-                if (pxHeight > 0)
-                {
-                    float pricePerPx = range / pxHeight;
-                    float priceDelta = deltaY * pricePerPx;
-                    
-                    _viewMinY += priceDelta;
-                    _viewMaxY += priceDelta;
                 }
             }
         }
@@ -784,8 +805,9 @@ public static partial class Program
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
         _layout.UpdateChartTitle(_currentSymbol, _currentTimeframe, currentPrice);
         
-        // Calculate visible candles based on actual chart width (subtracting right axis margin)
-        float chartWidth = _layout.ChartRect.Width - 60; // Matches ChartRenderer.RightAxisWidth
+        // Calculate visible candles based on actual chart content width
+        // ChartRect = panel Bounds; content = Bounds - 16px padding - 36px toolbar - 60px price axis
+        float chartWidth = _layout.ChartRect.Width - 16 - 36 - 60;
         float baseCandleWidth = 8.0f;
         float candleWidth = baseCandleWidth * _zoom;
         if (candleWidth < 1.0f) candleWidth = 1.0f;

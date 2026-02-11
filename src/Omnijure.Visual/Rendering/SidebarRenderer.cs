@@ -235,7 +235,7 @@ public class SidebarRenderer
         }
     }
 
-    public void RenderTrades(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
+    public void RenderTrades(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades, PanelPosition position)
     {
         if (trades == null || trades.Count == 0)
         {
@@ -243,15 +243,71 @@ public class SidebarRenderer
             return;
         }
 
+        bool vertical = position is PanelPosition.Left or PanelPosition.Right;
+
+        if (vertical)
+            RenderTradesVertical(canvas, width, height, trades);
+        else
+            RenderTradesHorizontal(canvas, width, height, trades);
+    }
+
+    // =========================================================================
+    // TRADES VERTICAL - single column: Price | Qty | Time per row
+    // Used when docked Left or Right
+    // =========================================================================
+    private void RenderTradesVertical(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
+    {
         float rowH = 17;
         float y = 12;
 
-        // Determine column layout based on available width
+        using var headerPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
+        using var headerFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 9);
+        using var timePaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
+
+        // Single column header
+        canvas.DrawText("PRICE", 6, y, headerFont, headerPaint);
+        canvas.DrawText("QTY", width * 0.42f, y, headerFont, headerPaint);
+        string timeHdr = "TIME";
+        float timeHdrW = headerFont.MeasureText(timeHdr);
+        canvas.DrawText(timeHdr, width - 6 - timeHdrW, y, headerFont, headerPaint);
+
+        float divY = y + 6;
+        canvas.DrawLine(2, divY, width - 2, divY, _linePaint);
+
+        y = divY + 5 + rowH;
+
+        int maxRows = (int)((height - y) / rowH);
+        int count = Math.Min(trades.Count, maxRows);
+
+        for (int i = 0; i < count; i++)
+        {
+            float ry = y + i * rowH;
+            var t = trades[i];
+            var paint = t.IsBuyerMaker ? _askTextPaint : _bidTextPaint;
+
+            canvas.DrawText(t.Price.ToString("F2"), 6, ry, _itemFont, paint);
+            canvas.DrawText(t.Quantity.ToString("F4"), width * 0.42f, ry, _itemFont, _headerTextPaint);
+
+            DateTime dt = DateTimeOffset.FromUnixTimeMilliseconds(t.Timestamp).LocalDateTime;
+            string timeStr = dt.ToString("HH:mm:ss");
+            float timeW = _itemFont.MeasureText(timeStr);
+            canvas.DrawText(timeStr, width - 6 - timeW, ry, _itemFont, timePaint);
+        }
+    }
+
+    // =========================================================================
+    // TRADES HORIZONTAL - N columns layout
+    // Used when docked Bottom
+    // =========================================================================
+    private void RenderTradesHorizontal(SKCanvas canvas, float width, float height, RingBuffer<MarketTrade> trades)
+    {
+        float rowH = 17;
+        float y = 12;
+
         float colW = 220;
         int numCols = Math.Max(1, (int)(width / colW));
         float actualColW = width / numCols;
 
-        // Column headers for each column
         using var headerPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
         using var headerFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 9);
         using var timePaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
@@ -264,11 +320,9 @@ public class SidebarRenderer
             canvas.DrawText("TIME", cx + actualColW - 46, y, headerFont, headerPaint);
         }
 
-        // Divider line between headers and rows
         float divY = y + 6;
         canvas.DrawLine(2, divY, width - 2, divY, _linePaint);
 
-        // Column vertical separators (from header top to bottom)
         for (int c = 1; c < numCols; c++)
         {
             float sx = c * actualColW;
@@ -277,7 +331,6 @@ public class SidebarRenderer
 
         y = divY + 5 + rowH;
 
-        // Calculate how many rows fit
         int rowsPerCol = (int)((height - y) / rowH);
         int totalVisible = rowsPerCol * numCols;
         int count = Math.Min(trades.Count, totalVisible);

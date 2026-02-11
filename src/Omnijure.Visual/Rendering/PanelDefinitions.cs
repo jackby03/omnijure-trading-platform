@@ -53,7 +53,7 @@ public static class PanelDefinitions
         [TRADES] = new PanelConfig
         {
             Id = TRADES, DisplayName = "Trades", Icon = SvgIconRenderer.Icon.Exchange,
-            DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 220,
+            DefaultPosition = PanelPosition.Left, DefaultWidth = 320, DefaultHeight = 600,
             CanClose = true, CanCollapse = true, CanFloat = true
         },
         [POSITIONS] = new PanelConfig
@@ -72,13 +72,13 @@ public static class PanelDefinitions
         {
             Id = ALERTS, DisplayName = "Alerts", Icon = SvgIconRenderer.Icon.Bell,
             DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 180,
-            CanClose = true, CanCollapse = true, CanFloat = true, StartClosed = true
+            CanClose = true, CanCollapse = true, CanFloat = true
         },
         [LOGS] = new PanelConfig
         {
             Id = LOGS, DisplayName = "Console", Icon = SvgIconRenderer.Icon.Info,
             DefaultPosition = PanelPosition.Bottom, DefaultWidth = 800, DefaultHeight = 200,
-            CanClose = true, CanCollapse = true, CanFloat = true, StartClosed = true
+            CanClose = true, CanCollapse = true, CanFloat = true
         }
     };
 }

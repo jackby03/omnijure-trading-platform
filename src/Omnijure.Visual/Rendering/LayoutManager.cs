@@ -48,16 +48,22 @@ public class LayoutManager
         // 1. Update panel system (calcula posiciones de paneles)
         _panelSystem.Update(width, height, HeaderHeight);
 
-        // 2. Get chart area (�rea no ocupada por paneles dockeados)
-        var chartArea = _panelSystem.GetChartArea(width, height, HeaderHeight);
+        // 2. ChartRect = actual chart panel bounds (from PanelSystem.Update)
+        //    Using panel Bounds directly avoids mismatch when multiple panels share a dock position (tabbed).
+        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        if (chartPanel != null && !chartPanel.IsClosed)
+        {
+            ChartRect = chartPanel.Bounds;
+        }
+        else
+        {
+            var chartArea = _panelSystem.GetChartArea(width, height, HeaderHeight);
+            ChartRect = new SKRect(chartArea.Left, HeaderHeight, chartArea.Right, chartArea.Bottom);
+        }
 
-        // 3. Chart completo (incluye toolbar interno)
-        ChartRect = new SKRect(chartArea.Left, HeaderHeight, chartArea.Right, chartArea.Bottom);
-        
-        // 4. Left Toolbar DENTRO del chart (para referencia, pero se renderiza dentro del chart)
-        // CRUCIAL: Usa chartArea.Bottom NO height para respetar panel Positions
-        LeftToolbarRect = new SKRect(chartArea.Left, HeaderHeight, 
-            chartArea.Left + LeftToolbarRenderer.ToolbarWidth, chartArea.Bottom);
+        // 3. Left Toolbar DENTRO del chart (para referencia)
+        LeftToolbarRect = new SKRect(ChartRect.Left, ChartRect.Top,
+            ChartRect.Left + LeftToolbarRenderer.ToolbarWidth, ChartRect.Bottom);
     }
     
     public void HandleMouseDown(float x, float y)
@@ -290,7 +296,7 @@ public class LayoutManager
                 _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, _lastOrderBook, panel.Position);
                 break;
             case PanelDefinitions.TRADES:
-                _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades);
+                _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades, panel.Position);
                 break;
             case PanelDefinitions.POSITIONS:
                 RenderPositionsPanel(canvas, contentWidth, contentHeight, scrollY);
@@ -306,26 +312,25 @@ public class LayoutManager
                 RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "Script Editor", "Pine Script \u2022 C# \u2022 Python");
                 break;
             case PanelDefinitions.ALERTS:
-                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "No active alerts", "Create alerts from the chart");
+                RenderAlertsPanel(canvas, contentWidth, contentHeight, scrollY);
                 break;
             case PanelDefinitions.LOGS:
-                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "Console", "Bot execution logs will appear here");
+                RenderConsolePanel(canvas, contentWidth, contentHeight, scrollY);
                 break;
         }
 
         canvas.Restore();
         
         // Draw scrollbar for scrollable panels (after clip restore)
-        if (panel.Config.Id is PanelDefinitions.PORTFOLIO or PanelDefinitions.AI_ASSISTANT)
+        if (panel.Config.Id is PanelDefinitions.PORTFOLIO or PanelDefinitions.AI_ASSISTANT
+            or PanelDefinitions.ALERTS or PanelDefinitions.LOGS)
         {
             float totalH = GetPanelContentHeight(panel);
             float scroll = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
 
             if (panel.Config.Id == PanelDefinitions.AI_ASSISTANT)
             {
-                // Scrollbar in the scroll zone between header and input
                 float headerH = 48;
-                float inputH = 52;
                 float scrollZoneH = GetAiScrollZoneHeight(panel);
                 if (totalH > scrollZoneH)
                 {
@@ -333,6 +338,28 @@ public class LayoutManager
                         panel.ContentBounds.Right - 6,
                         panel.ContentBounds.Top + headerH,
                         scrollZoneH, totalH, scroll);
+                }
+            }
+            else if (panel.Config.Id == PanelDefinitions.ALERTS)
+            {
+                float scrollViewH = panel.ContentBounds.Height - AlertsFixedHeaderH;
+                if (totalH > scrollViewH)
+                {
+                    DrawScrollbar(canvas,
+                        panel.ContentBounds.Right - 6,
+                        panel.ContentBounds.Top + AlertsFixedHeaderH,
+                        scrollViewH, totalH, scroll);
+                }
+            }
+            else if (panel.Config.Id == PanelDefinitions.LOGS)
+            {
+                float scrollViewH = panel.ContentBounds.Height - ConsoleFixedHeaderH;
+                if (totalH > scrollViewH)
+                {
+                    DrawScrollbar(canvas,
+                        panel.ContentBounds.Right - 6,
+                        panel.ContentBounds.Top + ConsoleFixedHeaderH,
+                        scrollViewH, totalH, scroll);
                 }
             }
             else
@@ -1047,6 +1074,286 @@ public class LayoutManager
         y += rowH;
     }
 
+    private const float AlertsFixedHeaderH = 58;
+    private const int AlertsRowCount = 12;
+    private const float AlertsRowH = 24; // 22 + 2 gap
+
+    private void RenderAlertsPanel(SKCanvas canvas, float width, float height, float scrollY)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var fontHeader = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 9);
+            using var fontNormal = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 10);
+            using var fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 9);
+            using var fontBold = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 10);
+
+            paint.IsAntialias = true;
+            paint.Style = SKPaintStyle.Fill;
+            float px = 8;
+            float rx = width - px;
+
+            // ========================================
+            // SCROLLABLE ROWS (clipped below fixed header)
+            // ========================================
+            float rowsTop = AlertsFixedHeaderH;
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, rowsTop, width, height));
+            canvas.Translate(0, -scrollY);
+
+            float y = rowsTop + 4;
+
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "BTCUSDT", "Price above", "$69,500.00", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "ETHUSDT", "Price below", "$3,200.00", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "SOLUSDT", "RSI > 70", "$158.40", "Triggered", new SKColor(255, 180, 50));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "BTCUSDT", "EMA Cross 9/21", "$68,900.00", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "BNBUSDT", "Price above", "$620.00", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "XRPUSDT", "Vol spike >200%", "$0.6240", "Triggered", new SKColor(255, 180, 50));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "ARBUSDT", "Price below", "$1.12", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "DOGEUSDT", "MACD Cross", "$0.1580", "Expired", new SKColor(120, 125, 135));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "PEPEUSDT", "Price above", "$0.00001200", "Triggered", new SKColor(255, 180, 50));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "LINKUSDT", "Price below", "$14.80", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "AVAXUSDT", "RSI < 30", "$35.20", "Active", new SKColor(46, 204, 113));
+            DrawAlertRow(canvas, paint, fontNormal, fontSmall, px, rx, width, ref y,
+                "DOTUSDT", "BB squeeze", "$7.45", "Expired", new SKColor(120, 125, 135));
+
+            canvas.Restore();
+
+            // ========================================
+            // FIXED HEADER (summary + column headers, drawn OVER rows)
+            // ========================================
+            paint.Color = new SKColor(18, 20, 24);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(0, 0, width, AlertsFixedHeaderH, paint);
+
+            float hy = 4;
+            float cardGap = 6;
+            float cardW = (width - px * 2 - cardGap * 2) / 3;
+            DrawAlertSummaryCard(canvas, paint, fontSmall, fontBold, px, hy, cardW, "Active", "7", new SKColor(46, 204, 113));
+            DrawAlertSummaryCard(canvas, paint, fontSmall, fontBold, px + cardW + cardGap, hy, cardW, "Triggered", "3", new SKColor(255, 180, 50));
+            DrawAlertSummaryCard(canvas, paint, fontSmall, fontBold, px + (cardW + cardGap) * 2, hy, cardW, "Expired", "2", new SKColor(120, 125, 135));
+            hy += 40;
+
+            paint.Color = new SKColor(65, 70, 80);
+            canvas.DrawText("PAIR", px + 4, hy, fontHeader, paint);
+            canvas.DrawText("CONDITION", px + width * 0.25f, hy, fontHeader, paint);
+            canvas.DrawText("PRICE", px + width * 0.55f, hy, fontHeader, paint);
+            string statusHdr = "STATUS";
+            float sW = fontHeader.MeasureText(statusHdr);
+            canvas.DrawText(statusHdr, rx - sW - 4, hy, fontHeader, paint);
+            hy += 8;
+
+            paint.Color = new SKColor(35, 40, 50);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawLine(px, hy, rx, hy, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private static void DrawAlertSummaryCard(SKCanvas canvas, SKPaint paint, SKFont labelFont, SKFont valueFont,
+        float x, float y, float w, string label, string value, SKColor valueColor)
+    {
+        float h = 32;
+        paint.Color = new SKColor(20, 24, 32);
+        paint.Style = SKPaintStyle.Fill;
+        canvas.DrawRoundRect(new SKRect(x, y, x + w, y + h), 6, 6, paint);
+        paint.Color = new SKColor(75, 80, 92);
+        canvas.DrawText(label, x + 8, y + 12, labelFont, paint);
+        paint.Color = valueColor;
+        canvas.DrawText(value, x + 8, y + 26, valueFont, paint);
+    }
+
+    private static void DrawAlertRow(SKCanvas canvas, SKPaint paint, SKFont font, SKFont smallFont,
+        float left, float right, float width, ref float y,
+        string pair, string condition, string price, string status, SKColor statusColor)
+    {
+        float rowH = 22;
+        var rowRect = new SKRect(left, y, right, y + rowH);
+
+        paint.Color = new SKColor(18, 22, 30);
+        paint.Style = SKPaintStyle.Fill;
+        canvas.DrawRoundRect(rowRect, 3, 3, paint);
+
+        // Pair
+        paint.Color = new SKColor(210, 215, 225);
+        canvas.DrawText(pair, left + 4, y + 14, font, paint);
+
+        // Condition
+        paint.Color = new SKColor(150, 155, 165);
+        canvas.DrawText(condition, left + width * 0.25f, y + 14, smallFont, paint);
+
+        // Price
+        paint.Color = new SKColor(180, 185, 195);
+        canvas.DrawText(price, left + width * 0.55f, y + 14, smallFont, paint);
+
+        // Status badge
+        float badgeW = smallFont.MeasureText(status) + 10;
+        float badgeX = right - badgeW - 4;
+        float badgeY = y + 4;
+        float badgeH = 14;
+        paint.Color = new SKColor(statusColor.Red, statusColor.Green, statusColor.Blue, 30);
+        canvas.DrawRoundRect(new SKRect(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH), 3, 3, paint);
+        paint.Color = statusColor;
+        float statusTextW = smallFont.MeasureText(status);
+        canvas.DrawText(status, badgeX + (badgeW - statusTextW) / 2, badgeY + 11, smallFont, paint);
+
+        y += rowH + 2;
+    }
+
+    private const float ConsoleFixedHeaderH = 30;
+    private const int ConsoleLineCount = 20;
+    private const float ConsoleLineH = 15;
+
+    private void RenderConsolePanel(SKCanvas canvas, float width, float height, float scrollY)
+    {
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            using var fontMono = new SKFont(SKTypeface.FromFamilyName("Cascadia Code", SKFontStyle.Normal), 10);
+            using var fontSmall = new SKFont(SKTypeface.FromFamilyName("Cascadia Code", SKFontStyle.Normal), 9);
+            using var fontHeader = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 9);
+
+            paint.IsAntialias = true;
+            paint.Style = SKPaintStyle.Fill;
+            float px = 6;
+            float lineH = ConsoleLineH;
+
+            // ========================================
+            // SCROLLABLE LOG LINES (clipped below fixed header)
+            // ========================================
+            float logsTop = ConsoleFixedHeaderH;
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, logsTop, width, height));
+            canvas.Translate(0, -scrollY);
+
+            float y = logsTop + 4;
+
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:14:02", "INFO", "WebSocket connected to wss://stream.binance.com", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:14:02", "INFO", "Subscribing to btcusdt@trade, btcusdt@depth20", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:14:03", "DEBUG", "OrderBook snapshot received: 500 bids, 500 asks", new SKColor(120, 140, 255));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:14:05", "INFO", "Grid Bot #1 initialized: BTCUSDT 20 levels", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:14:05", "INFO", "DCA Bot #2 started: ETHUSDT interval=4h", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:14:08", "DEBUG", "Latency check: REST 23ms, WS 8ms", new SKColor(120, 140, 255));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:15:12", "INFO", "Grid Bot #1: BUY filled 0.001 BTC @ $68,842.00", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:15:14", "INFO", "Grid Bot #1: SELL order placed 0.001 BTC @ $68,862.00", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:16:30", "WARN", "Rate limit approaching: 1180/1200 weight used", new SKColor(255, 180, 50));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:16:45", "INFO", "Scalper #3: Entry signal SOLUSDT short @ $153.80", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:17:01", "DEBUG", "RSI(14) BTCUSDT=58.3, ETHUSDT=52.1, SOLUSDT=44.7", new SKColor(120, 140, 255));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:17:22", "ERR", "Scalper #3: SL hit SOLUSDT -0.24% ($-1.12)", new SKColor(239, 83, 80));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:18:05", "INFO", "DCA Bot #2: Accumulated 0.02 ETH @ avg $3,418.50", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:18:30", "WARN", "High volatility detected: BTC 1m ATR > 2x avg", new SKColor(255, 180, 50));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:19:10", "INFO", "Grid Bot #1: SELL filled 0.001 BTC @ $68,862.00 +$0.02", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:19:11", "INFO", "Grid Bot #1: BUY order placed 0.001 BTC @ $68,842.00", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:19:45", "DEBUG", "Memory: 248 MB | CPU: 12% | GPU: 34%", new SKColor(120, 140, 255));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:20:02", "INFO", "Alert triggered: SOLUSDT RSI > 70 (current: 71.2)", new SKColor(46, 204, 113));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:20:15", "ERR", "WS reconnect attempt 1/5: timeout after 5000ms", new SKColor(239, 83, 80));
+            DrawConsoleLine(canvas, paint, fontMono, fontSmall, px, width, ref y, lineH,
+                "09:20:16", "INFO", "WS reconnected successfully (latency: 12ms)", new SKColor(46, 204, 113));
+
+            canvas.Restore();
+
+            // ========================================
+            // FIXED FILTER BAR (drawn OVER log lines)
+            // ========================================
+            paint.Color = new SKColor(18, 20, 24);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(0, 0, width, ConsoleFixedHeaderH, paint);
+
+            float fy = 4;
+            paint.Color = new SKColor(22, 26, 34);
+            canvas.DrawRoundRect(new SKRect(px, fy, width - px, fy + 20), 4, 4, paint);
+
+            paint.Color = new SKColor(85, 90, 100);
+            canvas.DrawText("ALL", px + 8, fy + 14, fontHeader, paint);
+            paint.Color = new SKColor(46, 204, 113);
+            canvas.DrawText("INFO", px + 40, fy + 14, fontHeader, paint);
+            paint.Color = new SKColor(255, 180, 50);
+            canvas.DrawText("WARN", px + 76, fy + 14, fontHeader, paint);
+            paint.Color = new SKColor(239, 83, 80);
+            canvas.DrawText("ERR", px + 118, fy + 14, fontHeader, paint);
+            paint.Color = new SKColor(120, 140, 255);
+            canvas.DrawText("DEBUG", px + 150, fy + 14, fontHeader, paint);
+
+            // Divider below filter
+            paint.Color = new SKColor(35, 40, 50);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawLine(px, ConsoleFixedHeaderH - 1, width - px, ConsoleFixedHeaderH - 1, paint);
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private static void DrawConsoleLine(SKCanvas canvas, SKPaint paint, SKFont monoFont, SKFont smallFont,
+        float px, float width, ref float y, float lineH,
+        string time, string level, string message, SKColor levelColor)
+    {
+        // Timestamp
+        paint.Color = new SKColor(70, 75, 85);
+        canvas.DrawText(time, px, y + lineH - 3, smallFont, paint);
+
+        // Level badge
+        float levelX = px + 62;
+        float badgeW = smallFont.MeasureText(level) + 6;
+        float badgeH = 12;
+        float badgeY = y + 1;
+        paint.Color = new SKColor(levelColor.Red, levelColor.Green, levelColor.Blue, 25);
+        canvas.DrawRoundRect(new SKRect(levelX, badgeY, levelX + badgeW, badgeY + badgeH), 2, 2, paint);
+        paint.Color = levelColor;
+        canvas.DrawText(level, levelX + 3, y + lineH - 3, smallFont, paint);
+
+        // Message (truncate if too long)
+        float msgX = levelX + badgeW + 6;
+        float maxMsgW = width - msgX - px;
+        paint.Color = new SKColor(180, 185, 195);
+        string msg = message;
+        if (monoFont.MeasureText(msg) > maxMsgW)
+        {
+            while (msg.Length > 3 && monoFont.MeasureText(msg + "...") > maxMsgW)
+                msg = msg[..^1];
+            msg += "...";
+        }
+        canvas.DrawText(msg, msgX, y + lineH - 3, monoFont, paint);
+
+        y += lineH;
+    }
+
     private void RenderPlaceholderPanel(SKCanvas canvas, float width, float height, string title, string subtitle)
     {
         var paint = PaintPool.Instance.Rent();
@@ -1114,6 +1421,28 @@ public class LayoutManager
                 return true;
             }
 
+            // Alerts: scroll zone is below fixed header (summary + column headers)
+            if (panel.Config.Id == PanelDefinitions.ALERTS)
+            {
+                float scrollViewH = viewHeight - AlertsFixedHeaderH;
+                if (contentHeight <= scrollViewH) return true;
+                float alertsMax = contentHeight - scrollViewH;
+                float alertsCur = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+                _panelScrollOffsets[panel.Config.Id] = Math.Clamp(alertsCur - deltaY * 20f, 0, alertsMax);
+                return true;
+            }
+
+            // Console: scroll zone is below fixed filter bar
+            if (panel.Config.Id == PanelDefinitions.LOGS)
+            {
+                float scrollViewH = viewHeight - ConsoleFixedHeaderH;
+                if (contentHeight <= scrollViewH) return true;
+                float logsMax = contentHeight - scrollViewH;
+                float logsCur = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+                _panelScrollOffsets[panel.Config.Id] = Math.Clamp(logsCur - deltaY * 20f, 0, logsMax);
+                return true;
+            }
+
             if (contentHeight <= viewHeight) return true;
 
             float maxScroll = contentHeight - viewHeight;
@@ -1127,17 +1456,14 @@ public class LayoutManager
 
     private float GetPanelContentHeight(DockablePanel panel)
     {
-        // Returns total content height for scroll calculation
-        // For POSITIONS: only the rows area scrolls (header is fixed ~60px)
         float fixedHeaderH = 60;
         return panel.Config.Id switch
         {
             PanelDefinitions.POSITIONS => fixedHeaderH + (48 * 4) + 10,
             PanelDefinitions.PORTFOLIO => 520,
-            // _aiChatContentHeight = total bubble content height (measured from headerH)
-            // The visible scroll zone = panel height - headerH(48) - inputH(52)
-            // So the scrollable content is just _aiChatContentHeight
             PanelDefinitions.AI_ASSISTANT => _aiChatContentHeight,
+            PanelDefinitions.ALERTS => AlertsRowCount * AlertsRowH + 8,
+            PanelDefinitions.LOGS => ConsoleLineCount * ConsoleLineH + 8,
             _ => panel.ContentBounds.Height
         };
     }
@@ -1150,6 +1476,18 @@ public class LayoutManager
         float headerH = 48;
         float inputH = 52;
         return panel.ContentBounds.Height - headerH - inputH;
+    }
+
+    /// <summary>
+    /// Returns the price axis strip rect in screen coordinates (right 60px of chart content area).
+    /// </summary>
+    public SKRect GetPriceAxisRect()
+    {
+        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        if (chartPanel == null || chartPanel.IsClosed) return SKRect.Empty;
+        var c = chartPanel.ContentBounds;
+        // Price axis = rightmost 60px of chart (after LeftToolbar offset, ChartRenderer uses RightAxisWidth=60)
+        return new SKRect(c.Right - 60, c.Top, c.Right, c.Bottom);
     }
 
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
