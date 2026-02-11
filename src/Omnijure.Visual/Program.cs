@@ -114,6 +114,38 @@ public static partial class Program
         // 1. Init Raw GL
         _gl = _window.CreateOpenGL();
         
+        // Set window icon from embedded SVG
+        try
+        {
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("Omnijure.Visual.Assets.logo.svg");
+            if (stream != null)
+            {
+                using var reader = new System.IO.StreamReader(stream);
+                var svg = new Svg.Skia.SKSvg();
+                svg.FromSvg(reader.ReadToEnd());
+                if (svg.Picture != null)
+                {
+                    int iconSize = 32;
+                    using var surface = SKSurface.Create(new SKImageInfo(iconSize, iconSize, SKColorType.Rgba8888, SKAlphaType.Premul));
+                    var c = surface.Canvas;
+                    c.Clear(SKColors.Transparent);
+                    float svgW = svg.Picture.CullRect.Width;
+                    float svgH = svg.Picture.CullRect.Height;
+                    float scale = (iconSize * 0.9f) / Math.Max(svgW, svgH);
+                    c.Translate((iconSize - svgW * scale) / 2f, (iconSize - svgH * scale) / 2f);
+                    c.Scale(scale, scale);
+                    c.DrawPicture(svg.Picture);
+                    using var img = surface.Snapshot();
+                    using var pixels = img.PeekPixels();
+                    var rawBytes = pixels.GetPixelSpan().ToArray();
+                    var rawImage = new Silk.NET.Core.RawImage(iconSize, iconSize, new System.Memory<byte>(rawBytes));
+                    _window.SetWindowIcon(ref rawImage);
+                }
+            }
+        }
+        catch { /* Icon loading is non-critical */ }
+        
         // Center window on screen
         try
         {

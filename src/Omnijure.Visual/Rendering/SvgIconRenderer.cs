@@ -1,5 +1,8 @@
 using SkiaSharp;
+using Svg.Skia;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
 
 namespace Omnijure.Visual.Rendering;
 
@@ -51,7 +54,10 @@ public static class SvgIconRenderer
         Lightning,
         Connection,
         Dot,
-        Info
+        Info,
+        
+        // Brand
+        Logo
     }
 
     /// <summary>
@@ -174,6 +180,9 @@ public static class SvgIconRenderer
                 break;
             case Icon.Info:
                 DrawInfo(canvas, paint, fillPaint);
+                break;
+            case Icon.Logo:
+                DrawLogo(canvas, fillPaint);
                 break;
         }
 
@@ -530,5 +539,43 @@ public static class SvgIconRenderer
         canvas.DrawCircle(12, 12, 9, paint);
         canvas.DrawCircle(12, 7, 1.5f, fillPaint);
         canvas.DrawLine(12, 11, 12, 18, paint);
+    }
+
+    private static SKPicture? _logoPicture;
+    private static bool _logoLoaded;
+
+    private static void DrawLogo(SKCanvas canvas, SKPaint fillPaint)
+    {
+        if (!_logoLoaded)
+        {
+            _logoLoaded = true;
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("Omnijure.Visual.Assets.logo.svg");
+            if (stream != null)
+            {
+                using var reader = new System.IO.StreamReader(stream);
+                var svg = new Svg.Skia.SKSvg();
+                svg.FromSvg(reader.ReadToEnd());
+                _logoPicture = svg.Picture;
+            }
+        }
+
+        if (_logoPicture == null)
+        {
+            canvas.DrawCircle(12, 12, 9, fillPaint);
+            return;
+        }
+
+        canvas.Save();
+        float svgW = _logoPicture.CullRect.Width;
+        float svgH = _logoPicture.CullRect.Height;
+        float scale = 22f / MathF.Max(svgW, svgH);
+        canvas.Translate((24f - svgW * scale) / 2f, (24f - svgH * scale) / 2f);
+        canvas.Scale(scale, scale);
+
+        using var colorFilter = SKColorFilter.CreateBlendMode(fillPaint.Color, SKBlendMode.SrcIn);
+        using var picturePaint = new SKPaint { ColorFilter = colorFilter, IsAntialias = true };
+        canvas.DrawPicture(_logoPicture, picturePaint);
+        canvas.Restore();
     }
 }

@@ -140,6 +140,12 @@ public class ToolbarRenderer
         float midY = rect.MidY;
         using var sepPaint = new SKPaint { Color = ThemeManager.Border, StrokeWidth = 1 };
         
+        // Logo
+        float logoSize = rect.Height - 8;
+        SvgIconRenderer.DrawIcon(canvas, SvgIconRenderer.Icon.Logo, 
+            x + 2, rect.Top + 4, logoSize, new SKColor(56, 139, 253));
+        x += logoSize + 8;
+        
         // 0. Menu Items (compactos)
         foreach (var menuItem in MenuItems)
         {
