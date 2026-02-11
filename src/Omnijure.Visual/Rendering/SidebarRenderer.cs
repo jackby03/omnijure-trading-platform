@@ -131,37 +131,63 @@ public class SidebarRenderer
             return;
         }
 
-        float rowH = 20;
-        float y = 10;
+        float rowH = 17;
+        float y = 12;
         
-        // Column headers
+        // Determine column layout based on available width
+        float colW = 220;
+        int numCols = Math.Max(1, (int)(width / colW));
+        float actualColW = width / numCols;
+        
+        // Column headers for each column
         using var headerPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
-        using var headerFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 10);
-        canvas.DrawText("PRICE", 10, y, headerFont, headerPaint);
-        canvas.DrawText("AMOUNT", width / 2 - 10, y, headerFont, headerPaint);
-        canvas.DrawText("TIME", width - 60, y, headerFont, headerPaint);
-        
-        y += 18;
-        canvas.DrawLine(5, y, width - 5, y, _linePaint);
-        y += 8;
-        
-        // Show last trades
-        int count = Math.Min(trades.Count, (int)((height - y) / rowH));
-        
+        using var headerFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 9);
         using var timePaint = new SKPaint { Color = ThemeManager.TextSecondary, IsAntialias = true };
+        
+        for (int c = 0; c < numCols; c++)
+        {
+            float cx = c * actualColW;
+            canvas.DrawText("PRICE", cx + 6, y, headerFont, headerPaint);
+            canvas.DrawText("QTY", cx + actualColW * 0.48f, y, headerFont, headerPaint);
+            canvas.DrawText("TIME", cx + actualColW - 46, y, headerFont, headerPaint);
+        }
+        
+        // Divider line between headers and rows
+        float divY = y + 6;
+        canvas.DrawLine(2, divY, width - 2, divY, _linePaint);
+        
+        // Column vertical separators (from header top to bottom)
+        for (int c = 1; c < numCols; c++)
+        {
+            float sx = c * actualColW;
+            canvas.DrawLine(sx, 0, sx, height, _linePaint);
+        }
+        
+        y = divY + 5 + rowH;
+        
+        // Calculate how many rows fit
+        int rowsPerCol = (int)((height - y) / rowH);
+        int totalVisible = rowsPerCol * numCols;
+        int count = Math.Min(trades.Count, totalVisible);
         
         for (int i = 0; i < count; i++)
         {
+            int col = i / rowsPerCol;
+            int row = i % rowsPerCol;
+            
+            if (row >= rowsPerCol) continue;
+            
+            float cx = col * actualColW;
+            float ry = y + row * rowH;
+            
             var t = trades[i];
             var paint = t.IsBuyerMaker ? _askTextPaint : _bidTextPaint;
             
-            canvas.DrawText(t.Price.ToString("F2"), 10, y, _itemFont, paint);
-            canvas.DrawText(t.Quantity.ToString("F4"), width / 2 - 10, y, _itemFont, _headerTextPaint);
+            canvas.DrawText(t.Price.ToString("F2"), cx + 6, ry, _itemFont, paint);
+            canvas.DrawText(t.Quantity.ToString("F4"), cx + actualColW * 0.48f, ry, _itemFont, _headerTextPaint);
             
             DateTime dt = DateTimeOffset.FromUnixTimeMilliseconds(t.Timestamp).LocalDateTime;
-            canvas.DrawText(dt.ToString("HH:mm:ss"), width - 60, y, _itemFont, timePaint);
-            
-            y += rowH;
+            canvas.DrawText(dt.ToString("HH:mm:ss"), cx + actualColW - 46, ry, _itemFont, timePaint);
         }
     }
 

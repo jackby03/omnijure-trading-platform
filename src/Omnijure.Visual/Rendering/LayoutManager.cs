@@ -23,6 +23,9 @@ public class LayoutManager
     private readonly LeftToolbarRenderer _leftToolbar;
     private readonly StatusBarRenderer _statusBar;
     
+    // Panel scroll state: panelId -> scrollY offset
+    private readonly Dictionary<string, float> _panelScrollOffsets = new();
+    
     // Legacy properties for backward compatibility
     public bool IsResizingLeft => false;
     public bool IsResizingRight => false;
@@ -261,6 +264,7 @@ public class LayoutManager
 
         var contentWidth = panel.ContentBounds.Width;
         var contentHeight = panel.ContentBounds.Height;
+        float scrollY = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
 
         switch (panel.Config.Id)
         {
@@ -271,12 +275,14 @@ public class LayoutManager
                 _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades);
                 break;
             case PanelDefinitions.POSITIONS:
-                RenderPositionsPanel(canvas, contentWidth, contentHeight);
+                RenderPositionsPanel(canvas, contentWidth, contentHeight, scrollY);
                 break;
             case PanelDefinitions.AI_ASSISTANT:
+                canvas.Translate(0, -scrollY);
                 RenderAIAssistantPanel(canvas, contentWidth, contentHeight);
                 break;
             case PanelDefinitions.PORTFOLIO:
+                canvas.Translate(0, -scrollY);
                 RenderPortfolioPanel(canvas, contentWidth, contentHeight);
                 break;
             case PanelDefinitions.SCRIPT_EDITOR:
@@ -291,11 +297,40 @@ public class LayoutManager
         }
 
         canvas.Restore();
+        
+        // Draw scrollbar for scrollable panels (after clip restore)
+        if (panel.Config.Id is PanelDefinitions.PORTFOLIO or PanelDefinitions.AI_ASSISTANT)
+        {
+            float totalH = GetPanelContentHeight(panel);
+            float viewH = panel.ContentBounds.Height;
+            float scroll = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+            
+            if (totalH > viewH)
+            {
+                DrawScrollbar(canvas, 
+                    panel.ContentBounds.Right - 6, 
+                    panel.ContentBounds.Top,
+                    viewH, totalH, scroll);
+            }
+        }
+    }
+
+    private static void DrawScrollbar(SKCanvas canvas, float x, float y, float viewH, float contentH, float scrollY)
+    {
+        float thumbRatio = viewH / contentH;
+        float thumbH = Math.Max(viewH * thumbRatio, 16);
+        float scrollRange = contentH - viewH;
+        float thumbY = y + (scrollRange > 0 ? (scrollY / scrollRange) * (viewH - thumbH) : 0);
+        
+        using var trackPaint = new SKPaint { Color = new SKColor(25, 29, 38, 120), Style = SKPaintStyle.Fill, IsAntialias = true };
+        canvas.DrawRoundRect(new SKRect(x, y, x + 4, y + viewH), 2, 2, trackPaint);
+        
+        using var thumbPaint = new SKPaint { Color = new SKColor(80, 85, 100), Style = SKPaintStyle.Fill, IsAntialias = true };
+        canvas.DrawRoundRect(new SKRect(x, thumbY, x + 4, thumbY + thumbH), 2, 2, thumbPaint);
     }
 
     /// <summary>
     /// Re-renders dragging panel content on top of the overlay chrome.
-    /// Called by PanelSystem.RenderOverlay via delegate.
     /// </summary>
     public void RenderDraggingPanelContent(SKCanvas canvas, DockablePanel panel)
     {
@@ -678,7 +713,7 @@ public class LayoutManager
         y += 16;
     }
 
-    private void RenderPositionsPanel(SKCanvas canvas, float width, float height)
+    private void RenderPositionsPanel(SKCanvas canvas, float width, float height, float scrollY)
     {
         var paint = PaintPool.Instance.Rent();
         try
@@ -687,51 +722,48 @@ public class LayoutManager
             using var fontNormal = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 10);
             using var fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 9);
             using var fontBold = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 10);
+            using var fontValue = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold), 12);
             
             paint.IsAntialias = true;
             paint.Style = SKPaintStyle.Fill;
             
             float px = 8;
+            float rx = width - px;
             float rowH = 48;
 
-            // ?? Summary bar ??
+            // ??? FIXED HEADER (no scroll) ???
+            
+            // Summary cards
             float sumY = 4;
-            paint.Color = new SKColor(22, 26, 34);
-            canvas.DrawRoundRect(new SKRect(px, sumY, width - px, sumY + 28), 4, 4, paint);
+            float cardGap = 6;
+            float cardW = (width - px * 2 - cardGap * 3) / 4;
             
-            float sx = px + 10;
-            paint.Color = new SKColor(80, 85, 95);
-            canvas.DrawText("Margin", sx, sumY + 12, fontSmall, paint);
-            paint.Color = new SKColor(200, 205, 215);
-            canvas.DrawText("$2,140.00", sx, sumY + 24, fontSmall, paint);
-            
-            sx += 80;
-            paint.Color = new SKColor(80, 85, 95);
-            canvas.DrawText("Unrealized PnL", sx, sumY + 12, fontSmall, paint);
-            paint.Color = new SKColor(46, 204, 113);
-            canvas.DrawText("+$187.42", sx, sumY + 24, fontSmall, paint);
-            
-            sx += 90;
-            paint.Color = new SKColor(80, 85, 95);
-            canvas.DrawText("ROE", sx, sumY + 12, fontSmall, paint);
-            paint.Color = new SKColor(46, 204, 113);
-            canvas.DrawText("+8.76%", sx, sumY + 24, fontSmall, paint);
-            
-            sx += 65;
-            paint.Color = new SKColor(80, 85, 95);
-            canvas.DrawText("Positions", sx, sumY + 12, fontSmall, paint);
-            paint.Color = new SKColor(200, 205, 215);
-            canvas.DrawText("4 open", sx, sumY + 24, fontSmall, paint);
+            DrawSummaryCard(canvas, paint, fontSmall, fontValue,
+                px, sumY, cardW, "Margin", "$2,140.00", new SKColor(200, 205, 215));
+            DrawSummaryCard(canvas, paint, fontSmall, fontValue,
+                px + cardW + cardGap, sumY, cardW, "Unrealized PnL", "+$187.42", new SKColor(46, 204, 113));
+            DrawSummaryCard(canvas, paint, fontSmall, fontValue,
+                px + (cardW + cardGap) * 2, sumY, cardW, "ROE", "+8.76%", new SKColor(46, 204, 113));
+            DrawSummaryCard(canvas, paint, fontSmall, fontValue,
+                px + (cardW + cardGap) * 3, sumY, cardW, "Positions", "4 open", new SKColor(200, 205, 215));
 
-            // ?? Column headers ??
-            float headerY = sumY + 38;
-            paint.Color = new SKColor(65, 70, 80);
+            // Column headers
+            float headerY = sumY + 48;
+            float usableW = width - px * 2;
+            float[] cols = [
+                px + 4,
+                px + usableW * 0.22f,
+                px + usableW * 0.37f,
+                px + usableW * 0.52f,
+                px + usableW * 0.68f,
+                rx - 56
+            ];
+            string[] headers = ["Symbol", "Entry", "Mark Price", "PnL (ROE)", "Liq. Price", ""];
             
-            float[] cols = [px + 4, px + 80, px + 155, px + 235, px + 320, width - 80];
-            string[] headers = ["Symbol", "Side/Size", "Entry", "Mark", "PnL (ROE)", "Actions"];
+            paint.Color = new SKColor(65, 70, 80);
             for (int i = 0; i < headers.Length && i < cols.Length; i++)
             {
-                if (cols[i] < width)
+                if (cols[i] < width && headers[i].Length > 0)
                     canvas.DrawText(headers[i], cols[i], headerY, fontHeader, paint);
             }
             
@@ -740,35 +772,64 @@ public class LayoutManager
             paint.Color = new SKColor(35, 40, 50);
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 1;
-            canvas.DrawLine(px, headerY, width - px, headerY, paint);
+            canvas.DrawLine(px, headerY, rx, headerY, paint);
             paint.Style = SKPaintStyle.Fill;
             
-            float y = headerY + 6;
+            // ??? SCROLLABLE ROWS (clipped below header) ???
+            float rowsTop = headerY + 2;
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, rowsTop, width, height));
+            canvas.Translate(0, -scrollY);
+            
+            float y = rowsTop + 4;
 
-            // ?? Position rows ??
             DrawPositionRow(canvas, paint, fontNormal, fontSmall, fontBold,
                 cols, width, ref y, rowH,
                 "BTCUSDT", "Long", "0.015 BTC",
                 "$67,240.00", "$69,061.00",
-                "+$27.32", "+2.71%", true, "10x");
+                "+$27.32", "+2.71%", true, "10x", "$62,100");
 
             DrawPositionRow(canvas, paint, fontNormal, fontSmall, fontBold,
                 cols, width, ref y, rowH,
                 "ETHUSDT", "Long", "0.85 ETH",
                 "$3,420.00", "$3,512.40",
-                "+$78.54", "+2.70%", true, "5x");
+                "+$78.54", "+2.70%", true, "5x", "$2,980");
 
             DrawPositionRow(canvas, paint, fontNormal, fontSmall, fontBold,
                 cols, width, ref y, rowH,
                 "SOLUSDT", "Short", "12.0 SOL",
                 "$158.20", "$153.80",
-                "+$52.80", "+2.78%", true, "10x");
+                "+$52.80", "+2.78%", true, "10x", "$174.50");
 
             DrawPositionRow(canvas, paint, fontNormal, fontSmall, fontBold,
                 cols, width, ref y, rowH,
                 "BNBUSDT", "Long", "1.5 BNB",
                 "$612.40", "$608.50",
-                "-$5.85", "-0.64%", false, "3x");
+                "-$5.85", "-0.64%", false, "3x", "$420.80");
+            
+            canvas.Restore();
+            
+            // ??? SCROLLBAR (rendered outside scroll clip) ???
+            float rowsTotalH = rowH * 4 + 10;
+            float rowsViewH = height - rowsTop;
+            if (rowsTotalH > rowsViewH)
+            {
+                float scrollBarX = width - 6;
+                float scrollTrackH = rowsViewH;
+                float thumbRatio = rowsViewH / rowsTotalH;
+                float thumbH = Math.Max(scrollTrackH * thumbRatio, 16);
+                float scrollRange = rowsTotalH - rowsViewH;
+                float thumbY = rowsTop + (scrollRange > 0 ? (scrollY / scrollRange) * (scrollTrackH - thumbH) : 0);
+                
+                // Track
+                paint.Color = new SKColor(25, 29, 38);
+                paint.Style = SKPaintStyle.Fill;
+                canvas.DrawRoundRect(new SKRect(scrollBarX, rowsTop, scrollBarX + 4, rowsTop + scrollTrackH), 2, 2, paint);
+                
+                // Thumb
+                paint.Color = new SKColor(70, 75, 90);
+                canvas.DrawRoundRect(new SKRect(scrollBarX, thumbY, scrollBarX + 4, thumbY + thumbH), 2, 2, paint);
+            }
         }
         finally
         {
@@ -776,32 +837,45 @@ public class LayoutManager
         }
     }
 
+    private static void DrawSummaryCard(SKCanvas canvas, SKPaint paint, SKFont labelFont, SKFont valueFont,
+        float x, float y, float w, string label, string value, SKColor valueColor)
+    {
+        float h = 38;
+        paint.Color = new SKColor(20, 24, 32);
+        paint.Style = SKPaintStyle.Fill;
+        canvas.DrawRoundRect(new SKRect(x, y, x + w, y + h), 6, 6, paint);
+        
+        paint.Color = new SKColor(75, 80, 92);
+        canvas.DrawText(label, x + 10, y + 14, labelFont, paint);
+        
+        paint.Color = valueColor;
+        canvas.DrawText(value, x + 10, y + 30, valueFont, paint);
+    }
+
     private static void DrawPositionRow(SKCanvas canvas, SKPaint paint, SKFont font, SKFont smallFont, SKFont boldFont,
         float[] cols, float width, ref float y, float rowH,
         string symbol, string side, string size,
         string entry, string mark,
-        string pnl, string roe, bool isProfit, string leverage)
+        string pnl, string roe, bool isProfit, string leverage, string liqPrice)
     {
         float px = cols[0] - 4;
         
-        // Hover-style row background (alternating subtle)
+        // Row background
         paint.Color = new SKColor(18, 22, 30);
         paint.Style = SKPaintStyle.Fill;
         canvas.DrawRoundRect(new SKRect(px, y, width - 8, y + rowH - 2), 4, 4, paint);
         
-        // Left accent bar (green for profit, red for loss)
+        // Left accent bar
         paint.Color = isProfit ? new SKColor(46, 204, 113, 180) : new SKColor(239, 83, 80, 180);
         canvas.DrawRoundRect(new SKRect(px, y + 4, px + 3, y + rowH - 6), 1.5f, 1.5f, paint);
         
-        float midY = y + rowH / 2;
-        float topY = midY - 6;
-        float botY = midY + 8;
+        float topY = y + 16;
+        float botY = y + 30;
 
-        // Symbol + leverage badge
+        // Col 0: Symbol + leverage + side/size
         paint.Color = new SKColor(215, 220, 230);
         canvas.DrawText(symbol, cols[0] + 4, topY, boldFont, paint);
         
-        // Leverage pill
         float levX = cols[0] + 4 + boldFont.MeasureText(symbol) + 4;
         float levW = smallFont.MeasureText(leverage) + 8;
         paint.Color = new SKColor(50, 55, 70);
@@ -809,41 +883,46 @@ public class LayoutManager
         paint.Color = new SKColor(160, 165, 175);
         canvas.DrawText(leverage, levX + 4, topY - 1, smallFont, paint);
         
-        // Side + Size (second line under symbol)
         bool isLong = side == "Long";
         paint.Color = isLong ? new SKColor(46, 204, 113) : new SKColor(239, 83, 80);
         canvas.DrawText(side, cols[0] + 4, botY, smallFont, paint);
         paint.Color = new SKColor(100, 105, 115);
-        float sideW = smallFont.MeasureText(side);
-        canvas.DrawText(" " + size, cols[0] + 4 + sideW, botY, smallFont, paint);
+        canvas.DrawText(" " + size, cols[0] + 4 + smallFont.MeasureText(side), botY, smallFont, paint);
 
-        // Entry price
+        // Col 1: Entry
+        if (cols[1] < width - 40)
+        {
+            paint.Color = new SKColor(160, 165, 175);
+            canvas.DrawText(entry, cols[1], topY, font, paint);
+        }
+
+        // Col 2: Mark price
         if (cols[2] < width - 40)
         {
-            paint.Color = new SKColor(180, 185, 195);
-            canvas.DrawText(entry, cols[2], topY, font, paint);
+            paint.Color = new SKColor(220, 225, 235);
+            canvas.DrawText(mark, cols[2], topY, boldFont, paint);
         }
 
-        // Mark price
+        // Col 3: PnL + ROE
         if (cols[3] < width - 40)
         {
-            paint.Color = new SKColor(210, 215, 225);
-            canvas.DrawText(mark, cols[3], topY, boldFont, paint);
-        }
-
-        // PnL + ROE
-        if (cols[4] < width - 40)
-        {
             paint.Color = isProfit ? new SKColor(46, 204, 113) : new SKColor(239, 83, 80);
-            canvas.DrawText(pnl, cols[4], topY, boldFont, paint);
-            canvas.DrawText(roe, cols[4], botY, smallFont, paint);
+            canvas.DrawText(pnl, cols[3], topY, boldFont, paint);
+            canvas.DrawText(roe, cols[3], botY, smallFont, paint);
         }
 
-        // Close button
+        // Col 4: Liq. Price
+        if (cols[4] < width - 60)
+        {
+            paint.Color = new SKColor(130, 135, 145);
+            canvas.DrawText(liqPrice, cols[4], topY, font, paint);
+        }
+
+        // Col 5: Close button
         if (cols.Length > 5 && cols[5] < width)
         {
             float btnX = cols[5];
-            float btnY = midY - 9;
+            float btnY = y + rowH / 2 - 9;
             float btnW = 48;
             float btnH = 18;
             var btnRect = new SKRect(btnX, btnY, btnX + btnW, btnY + btnH);
@@ -892,6 +971,59 @@ public class LayoutManager
     public bool IsMouseOverPanel(float x, float y)
     {
         return _panelSystem.IsMouseOverPanel(x, y);
+    }
+
+    /// <summary>
+    /// Handles mouse wheel scroll inside panels. Returns true if consumed.
+    /// </summary>
+    public bool HandlePanelScroll(float x, float y, float deltaY)
+    {
+        foreach (var panel in _panelSystem.Panels)
+        {
+            if (panel.IsClosed || panel.IsCollapsed) continue;
+            if (panel.Config.Id == PanelDefinitions.CHART) continue;
+            if (!_panelSystem.IsBottomTabActive(panel)) continue;
+            if (!panel.ContentBounds.Contains(x, y)) continue;
+
+            float contentHeight = GetPanelContentHeight(panel);
+            float viewHeight = panel.ContentBounds.Height;
+            
+            // For panels with fixed headers, scroll area is smaller
+            if (panel.Config.Id == PanelDefinitions.POSITIONS)
+            {
+                float fixedHeaderH = 60;
+                float rowsContentH = (48 * 4) + 10;
+                float rowsViewH = viewHeight - fixedHeaderH;
+                if (rowsContentH <= rowsViewH) return true;
+                float posMaxScroll = rowsContentH - rowsViewH;
+                float posCurrent = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+                _panelScrollOffsets[panel.Config.Id] = Math.Clamp(posCurrent - deltaY * 20f, 0, posMaxScroll);
+                return true;
+            }
+            
+            if (contentHeight <= viewHeight) return true;
+            
+            float maxScroll = contentHeight - viewHeight;
+            float current = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+            float newScroll = Math.Clamp(current - deltaY * 20f, 0, maxScroll);
+            _panelScrollOffsets[panel.Config.Id] = newScroll;
+            return true;
+        }
+        return false;
+    }
+
+    private float GetPanelContentHeight(DockablePanel panel)
+    {
+        // Returns total content height for scroll calculation
+        // For POSITIONS: only the rows area scrolls (header is fixed ~60px)
+        float fixedHeaderH = 60;
+        return panel.Config.Id switch
+        {
+            PanelDefinitions.POSITIONS => fixedHeaderH + (48 * 4) + 10, // 4 rows * 48px
+            PanelDefinitions.PORTFOLIO => 520,
+            PanelDefinitions.AI_ASSISTANT => 600,
+            _ => panel.ContentBounds.Height
+        };
     }
 
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;

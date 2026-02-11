@@ -331,6 +331,10 @@ public static partial class Program
             return;
         }
 
+        // Panel scroll (Portfolio, Positions, AI Assistant, etc.)
+        if (_layout.HandlePanelScroll(_mousePos.X, _mousePos.Y, arg2.Y))
+            return;
+
         if (arg2.Y > 0) _zoom *= 1.1f;
         else _zoom *= 0.9f;
         _zoom = Math.Clamp(_zoom, 0.05f, 50.0f);
@@ -779,8 +783,10 @@ public static partial class Program
         if (visibleCandles < 2) visibleCandles = 2; 
 
         // Limit scrolling past historical data
-        if (_scrollOffset > _buffer.Count - visibleCandles)
-            _scrollOffset = _buffer.Count - visibleCandles;
+        // Clamp so the most recent candle is always visible at the right edge
+        int maxScroll = Math.Max(0, _buffer.Count - visibleCandles);
+        if (_scrollOffset > maxScroll)
+            _scrollOffset = maxScroll;
 
         // TradingView-style: Allow unlimited scrolling into future (up to 10 screens worth)
         int minScroll = -(visibleCandles * 10);
