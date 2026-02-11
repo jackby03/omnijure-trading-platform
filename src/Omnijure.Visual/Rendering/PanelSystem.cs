@@ -18,6 +18,7 @@ public class PanelSystem
     private SKPoint _mouseDownPosition;
     private DockablePanel? _hoveredPanel;
     private string? _hoveredHandle;
+    private DockablePanel? _activePanel;
     private SKPoint _dragOffset;
     private DockZone? _currentDockZone;
     
@@ -30,7 +31,7 @@ public class PanelSystem
     private const float CollapsedWidth = 32f;
     private const float HandlePadding = 6f;
     private const float DragThreshold = 5f;
-    private const float PanelGap = 2f;
+    private const float PanelGap = 4f;
     private const float ResizeEdgeWidth = 6f;
     
     // Dock guide constants (VS-style)
@@ -98,11 +99,12 @@ public class PanelSystem
         _lastHeaderHeight = headerHeight;
         
         float statusBarHeight = StatusBarRenderer.Height;
-        float availableBottom = screenHeight - statusBarHeight;
+        float availableBottom = screenHeight - statusBarHeight - PanelGap;
         
-        float currentLeftX = 0;
-        float currentRightX = screenWidth;
+        float currentLeftX = PanelGap;
+        float currentRightX = screenWidth - PanelGap;
         float currentBottomY = availableBottom;
+        float topEdgeY = headerHeight + PanelGap;
 
         // PASO 1: Left panels (tabbed when multiple)
         var leftPanels = _panels.Values.Where(p => p.Position == PanelPosition.Left && !p.IsFloating && !p.IsClosed).OrderBy(p => p.DockOrder).ToList();
@@ -114,13 +116,13 @@ public class PanelSystem
             float lw = activeLeft.IsCollapsed ? CollapsedWidth : activeLeft.Width;
             if (leftPanels.Count > 1)
             {
-                _sideTabBarRects[PanelPosition.Left] = new SKRect(currentLeftX, headerHeight, currentLeftX + lw - PanelGap, headerHeight + TabBarHeight);
-                activeLeft.Bounds = new SKRect(currentLeftX, headerHeight + TabBarHeight, currentLeftX + lw - PanelGap, availableBottom);
+                _sideTabBarRects[PanelPosition.Left] = new SKRect(currentLeftX, availableBottom - TabBarHeight, currentLeftX + lw - PanelGap, availableBottom);
+                activeLeft.Bounds = new SKRect(currentLeftX, topEdgeY, currentLeftX + lw - PanelGap, availableBottom - TabBarHeight);
             }
             else
             {
                 _sideTabBarRects.Remove(PanelPosition.Left);
-                activeLeft.Bounds = new SKRect(currentLeftX, headerHeight, currentLeftX + lw - PanelGap, availableBottom);
+                activeLeft.Bounds = new SKRect(currentLeftX, topEdgeY, currentLeftX + lw - PanelGap, availableBottom);
             }
             currentLeftX += lw;
         }
@@ -136,13 +138,13 @@ public class PanelSystem
             float rw = activeRight.IsCollapsed ? CollapsedWidth : activeRight.Width;
             if (rightPanels.Count > 1)
             {
-                _sideTabBarRects[PanelPosition.Right] = new SKRect(currentRightX - rw + PanelGap, headerHeight, currentRightX, headerHeight + TabBarHeight);
-                activeRight.Bounds = new SKRect(currentRightX - rw + PanelGap, headerHeight + TabBarHeight, currentRightX, availableBottom);
+                _sideTabBarRects[PanelPosition.Right] = new SKRect(currentRightX - rw + PanelGap, availableBottom - TabBarHeight, currentRightX, availableBottom);
+                activeRight.Bounds = new SKRect(currentRightX - rw + PanelGap, topEdgeY, currentRightX, availableBottom - TabBarHeight);
             }
             else
             {
                 _sideTabBarRects.Remove(PanelPosition.Right);
-                activeRight.Bounds = new SKRect(currentRightX - rw + PanelGap, headerHeight, currentRightX, availableBottom);
+                activeRight.Bounds = new SKRect(currentRightX - rw + PanelGap, topEdgeY, currentRightX, availableBottom);
             }
             currentRightX -= rw;
         }
@@ -166,14 +168,14 @@ public class PanelSystem
             float contentHeight = activeTab.IsCollapsed ? CollapsedWidth : activeTab.Height;
             float totalHeight = contentHeight + TabBarHeight;
             
-            // Tab bar rect (above panel content)
-            _bottomTabBarRect = new SKRect(
-                currentLeftX, currentBottomY - totalHeight,
-                currentRightX, currentBottomY - totalHeight + TabBarHeight);
-            
-            // Active panel bounds (below tab bar, no panel header needed)
+            // Active panel bounds (content area above tab bar)
             activeTab.Bounds = new SKRect(
-                currentLeftX, currentBottomY - contentHeight + PanelGap,
+                currentLeftX, currentBottomY - totalHeight,
+                currentRightX, currentBottomY - TabBarHeight);
+            
+            // Tab bar rect (below panel content)
+            _bottomTabBarRect = new SKRect(
+                currentLeftX, currentBottomY - TabBarHeight,
                 currentRightX, currentBottomY);
             
             currentBottomY -= totalHeight;
@@ -189,7 +191,7 @@ public class PanelSystem
         var centerPanel = _panels.Values.FirstOrDefault(p => p.Position == PanelPosition.Center && !p.IsClosed);
         if (centerPanel != null)
         {
-            centerPanel.Bounds = new SKRect(currentLeftX, headerHeight, currentRightX, currentBottomY);
+            centerPanel.Bounds = new SKRect(currentLeftX, topEdgeY, currentRightX, currentBottomY);
         }
 
         // Update handle positions for visible panels (skip inactive tabs)
@@ -303,11 +305,11 @@ public class PanelSystem
         try
         {
             // Tab bar background
-            paint.Color = new SKColor(18, 21, 28);
+            paint.Color = new SKColor(18, 20, 24);
             paint.Style = SKPaintStyle.Fill;
             canvas.DrawRect(_bottomTabBarRect, paint);
             
-            // Top border
+            // Top border (separator between content and tabs)
             paint.Color = new SKColor(40, 45, 55);
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 1;
@@ -338,9 +340,9 @@ public class PanelSystem
                     paint.Color = new SKColor(30, 34, 42);
                     canvas.DrawRoundRect(new SKRoundRect(tabRect, 4, 4), paint);
                     
-                    // Active indicator line at bottom
+                    // Active indicator line at top (VS-style, tabs at bottom)
                     paint.Color = new SKColor(56, 139, 253);
-                    canvas.DrawRect(tabX + 4, tabY + tabH - 2, tabW - 8, 2, paint);
+                    canvas.DrawRect(tabX + 4, tabY, tabW - 8, 2, paint);
                 }
                 
                 // Icon
@@ -368,28 +370,30 @@ public class PanelSystem
         var paint = PaintPool.Instance.Rent();
         try
         {
-            // Panel background (no header — tab bar replaces it)
+            // Panel background (seamless with tab bar below)
             paint.Color = new SKColor(18, 20, 24);
             paint.Style = SKPaintStyle.Fill;
             canvas.DrawRect(panel.Bounds, paint);
 
-            // Border
+            // Border (top and sides only, bottom connects to tab bar)
             paint.Color = new SKColor(35, 38, 45);
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 1;
-            canvas.DrawRect(panel.Bounds, paint);
+            canvas.DrawLine(panel.Bounds.Left, panel.Bounds.Top, panel.Bounds.Right, panel.Bounds.Top, paint);
+            canvas.DrawLine(panel.Bounds.Left, panel.Bounds.Top, panel.Bounds.Left, panel.Bounds.Bottom, paint);
+            canvas.DrawLine(panel.Bounds.Right, panel.Bounds.Top, panel.Bounds.Right, panel.Bounds.Bottom, paint);
         }
         finally
         {
             PaintPool.Instance.Return(paint);
         }
         
-        // Content bounds for bottom panel — no header offset since tab bar handles it
+        // Content bounds for bottom panel
         panel.ContentBounds = new SKRect(
             panel.Bounds.Left + 8,
             panel.Bounds.Top + 8,
             panel.Bounds.Right - 8,
-            panel.Bounds.Bottom - 8
+            panel.Bounds.Bottom - 4
         );
     }
 
@@ -410,14 +414,14 @@ public class PanelSystem
             var paint = PaintPool.Instance.Rent();
             try
             {
-                paint.Color = new SKColor(18, 21, 28);
+                paint.Color = new SKColor(18, 20, 24);
                 paint.Style = SKPaintStyle.Fill;
                 canvas.DrawRect(barRect, paint);
                 
                 paint.Color = new SKColor(40, 45, 55);
                 paint.Style = SKPaintStyle.Stroke;
                 paint.StrokeWidth = 1;
-                canvas.DrawLine(barRect.Left, barRect.Bottom, barRect.Right, barRect.Bottom, paint);
+                canvas.DrawLine(barRect.Left, barRect.Top, barRect.Right, barRect.Top, paint);
 
                 _sideTabRects[position].Clear();
                 
@@ -443,8 +447,9 @@ public class PanelSystem
                         paint.Color = new SKColor(30, 34, 42);
                         canvas.DrawRoundRect(new SKRoundRect(tabRect, 4, 4), paint);
                         
+                        // Active indicator on top (VS-style, tabs at bottom)
                         paint.Color = new SKColor(56, 139, 253);
-                        canvas.DrawRect(tabX + 4, tabY + tabH - 2, tabW - 8, 2, paint);
+                        canvas.DrawRect(tabX + 4, tabY, tabW - 8, 2, paint);
                     }
                     
                     SvgIconRenderer.DrawIcon(canvas, tab.Config.Icon, 
@@ -691,11 +696,13 @@ public class PanelSystem
             paint.Style = SKPaintStyle.Fill;
             canvas.DrawRoundRect(panel.Bounds, 6, 6, paint);
 
-            // Border (más grueso si está hover)
-            bool isHovered = panel == _hoveredPanel;
-            paint.Color = isHovered ? new SKColor(70, 140, 255, 150) : new SKColor(35, 38, 45);
+            // Border — highlight on active (clicked) or handle hover
+            bool isActive = _activePanel == panel;
+            bool isHandleHovered = _hoveredHandle != null && _hoveredHandle.StartsWith(panel.Config.Id);
+            bool highlight = isActive || isHandleHovered;
+            paint.Color = highlight ? new SKColor(70, 140, 255, isActive ? (byte)120 : (byte)150) : new SKColor(35, 38, 45);
             paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = isHovered ? 2 : 1;
+            paint.StrokeWidth = highlight ? 1.5f : 1;
             canvas.DrawRoundRect(panel.Bounds, 6, 6, paint);
 
             if (panel.IsCollapsed)
@@ -943,9 +950,8 @@ public class PanelSystem
                         edgeRect = new SKRect(b.Left - 1, b.Top, b.Left + 1, b.Bottom);
                         break;
                     case PanelPosition.Bottom:
-                        // Use tab bar top edge for resize indicator
-                        float topEdge = _bottomTabBarRect.Height > 0 ? _bottomTabBarRect.Top : b.Top;
-                        edgeRect = new SKRect(b.Left, topEdge - 1, b.Right, topEdge + 1);
+                        // Resize indicator at the top of the bottom panel area
+                        edgeRect = new SKRect(b.Left, b.Top - 1, b.Right, b.Top + 1);
                         break;
                 }
 
@@ -1016,7 +1022,17 @@ public class PanelSystem
     {
         _mouseDownPosition = new SKPoint(x, y);
         
-        // Check bottom tab bar clicks — switch tab AND prepare tear-off drag
+        // Set active panel on click
+        _activePanel = null;
+        foreach (var ap in _panels.Values.OrderByDescending(ap => ap.IsFloating))
+        {
+            if (ap.IsClosed || ap.Position == PanelPosition.Center) continue;
+            if (ap.Position == PanelPosition.Bottom && !ap.IsFloating && ap.Config.Id != _activeBottomTabId) continue;
+            if (ap.Position is PanelPosition.Left or PanelPosition.Right && !ap.IsFloating
+                && ap.Config.Id != _activeTabIds.GetValueOrDefault(ap.Position, ap.Config.Id)) continue;
+            if (ap.Bounds.Contains(x, y)) { _activePanel = ap; break; }
+        }
+        
         if (_bottomTabBarRect.Contains(x, y))
         {
             foreach (var (id, rect) in _bottomTabRects)
@@ -1411,9 +1427,8 @@ public class PanelSystem
                     return ResizeEdge.Left;
                 break;
             case PanelPosition.Bottom:
-                // Top edge of bottom tab area (use tab bar top, not panel top)
-                float topEdge = _bottomTabBarRect.Height > 0 ? _bottomTabBarRect.Top : b.Top;
-                if (y >= topEdge - ResizeEdgeWidth && y <= topEdge + ResizeEdgeWidth && x >= b.Left && x <= b.Right)
+                // Top edge of bottom panel content area
+                if (y >= b.Top - ResizeEdgeWidth && y <= b.Top + ResizeEdgeWidth && x >= b.Left && x <= b.Right)
                     return ResizeEdge.Top;
                 break;
             case PanelPosition.Top:

@@ -126,7 +126,17 @@ public class LayoutManager
         //   CAPA 5: Window border
         // ???????????????????????????????????????????????????????????
 
-        // CAPA 0: Panel backgrounds + chrome
+        // CAPA 0: Workspace background
+        var wsBgPaint = PaintPool.Instance.Rent();
+        try
+        {
+            wsBgPaint.Color = new SKColor(10, 12, 16);
+            wsBgPaint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(0, 0, screenWidth, screenHeight, wsBgPaint);
+        }
+        finally { PaintPool.Instance.Return(wsBgPaint); }
+
+        // CAPA 0.5: Panel backgrounds + chrome
         _panelSystem.Render(canvas);
 
         // CAPA 1: Chart content

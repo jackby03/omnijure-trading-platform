@@ -97,7 +97,9 @@ public class ChartRenderer
         bool isHoverChart = mousePos.X >= 0 && mousePos.X <= chartW && mousePos.Y >= 0 && mousePos.Y <= mainChartH;
         if (isHoverChart)
         {
-             DrawCrosshairLines(canvas, mousePos.X, mousePos.Y, chartW, mainChartH);
+             // Snap vertical line to nearest candle center
+             float snappedX = SnapToCandleX(mousePos.X, chartW, visibleCandles, candleWidth);
+             DrawCrosshairLines(canvas, snappedX, mousePos.Y, chartW, mainChartH);
         }
 
         canvas.Restore(); // End Main Chart Clip
@@ -124,7 +126,8 @@ public class ChartRenderer
         // CROSSHAIR LABELS (Over Axes)
         if (isHoverChart)
         {
-            DrawCrosshairLabels(canvas, mousePos.X, mousePos.Y, chartW, mainChartH, minPrice, maxPrice, buffer, scrollOffset, visibleCandles, candleWidth, interval);
+            float snappedLabelX = SnapToCandleX(mousePos.X, chartW, visibleCandles, candleWidth);
+            DrawCrosshairLabels(canvas, snappedLabelX, mousePos.Y, chartW, mainChartH, minPrice, maxPrice, buffer, scrollOffset, visibleCandles, candleWidth, interval);
         }
     }
     
@@ -696,6 +699,24 @@ public class ChartRenderer
         canvas.DrawLine(0, y, w, y, paint);
         // Vertical
         canvas.DrawLine(x, 0, x, h, paint);
+    }
+
+    /// <summary>
+    /// Snaps an X coordinate to the center of the nearest candle.
+    /// Candles are drawn right-to-left: screenIndex 0 is at the right.
+    /// </summary>
+    private static float SnapToCandleX(float mouseX, int chartW, int visibleCandles, float candleWidth)
+    {
+        // Convert mouse X to screen candle index
+        // candleX = (visibleCandles - 1 - screenIndex) * candleWidth + candleWidth / 2
+        // screenIndex = (visibleCandles - 1) - (mouseX - candleWidth / 2) / candleWidth
+        float rawIndex = (visibleCandles - 1) - (mouseX - candleWidth / 2f) / candleWidth;
+        int snappedIndex = (int)MathF.Round(rawIndex);
+        snappedIndex = Math.Clamp(snappedIndex, 0, visibleCandles - 1);
+        
+        // Convert back to X
+        float snappedX = (visibleCandles - 1 - snappedIndex) * candleWidth + candleWidth / 2f;
+        return Math.Clamp(snappedX, 0, chartW);
     }
     
     private void DrawCrosshairLabels(SKCanvas canvas, float x, float y, int chartW, int chartH, float min, float max, RingBuffer<Candle> buffer, int scrollOffset, int visible, float candleWidth, string interval)
