@@ -63,6 +63,14 @@ public class LayoutManager
         _panelSystem.OnMouseDown(x, y);
     }
     
+    public void TogglePanel(string panelId) => _panelSystem.TogglePanel(panelId);
+    
+    public bool IsPanelVisible(string panelId)
+    {
+        var panel = _panelSystem.GetPanel(panelId);
+        return panel != null && !panel.IsClosed;
+    }
+    
     public void HandleMouseUp()
     {
         _panelSystem.OnMouseUp(0, 0, 0, 0);
@@ -86,9 +94,9 @@ public class LayoutManager
         if (toolbarRect.Contains(x, y))
         {
             float localY = y - contentArea.Top;
-            float buttonY = 8;
-            const float ButtonSize = 44;
-            const float ButtonSpacing = 4;
+            float buttonY = 4;
+            const float ButtonSize = 30;
+            const float ButtonSpacing = 2;
             
             var tools = new[] 
             {
@@ -211,8 +219,6 @@ public class LayoutManager
     {
         _panelSystem.UpdateChartTitle(symbol, interval, price);
     }
-    
-    public void TogglePanel(string panelId) => _panelSystem.TogglePanel(panelId);
 
     private void RenderEmptyState(SKCanvas canvas, SKRect area)
     {

@@ -8,10 +8,10 @@ namespace Omnijure.Visual.Rendering;
 /// </summary>
 public class LeftToolbarRenderer
 {
-    public const float ToolbarWidth = 52;
-    private const float IconSize = 20;
-    private const float ButtonSize = 44;
-    private const float ButtonSpacing = 4;
+    public const float ToolbarWidth = 36;
+    private const float IconSize = 16;
+    private const float ButtonSize = 30;
+    private const float ButtonSpacing = 2;
 
     private readonly SKPaint _bgPaint;
     private readonly SKPaint _btnDefault;
@@ -59,7 +59,7 @@ public class LeftToolbarRenderer
         canvas.DrawLine(ToolbarWidth - 1, 0, ToolbarWidth - 1, height, _separatorPaint);
 
         // Draw tool buttons
-        float y = 8;
+        float y = 4;
 
         for (int i = 0; i < _tools.Length; i++)
         {
@@ -69,7 +69,7 @@ public class LeftToolbarRenderer
             bool isHovered = IsButtonHovered(mouseX, mouseY, y);
 
             // Button background
-            SKRect btnRect = new SKRect(6, y, ToolbarWidth - 6, y + ButtonSize);
+            SKRect btnRect = new SKRect(3, y, ToolbarWidth - 3, y + ButtonSize);
 
             SKPaint btnPaint = isActive ? _btnActive : (isHovered ? _btnHover : _btnDefault);
             canvas.DrawRoundRect(btnRect, ThemeManager.BorderRadius, ThemeManager.BorderRadius, btnPaint);
@@ -84,7 +84,7 @@ public class LeftToolbarRenderer
             if (i == 0)
             {
                 y += 4;
-                canvas.DrawLine(10, y, ToolbarWidth - 10, y, _separatorPaint);
+                canvas.DrawLine(6, y, ToolbarWidth - 6, y, _separatorPaint);
                 y += 8;
             }
         }
@@ -95,7 +95,7 @@ public class LeftToolbarRenderer
     /// </summary>
     public SKRect GetButtonRect(int index)
     {
-        float y = 8;
+        float y = 4;
 
         for (int i = 0; i < index; i++)
         {
@@ -103,7 +103,7 @@ public class LeftToolbarRenderer
             if (i == 0) y += 16; // Separator space
         }
 
-        return new SKRect(6, y, ToolbarWidth - 6, y + ButtonSize);
+        return new SKRect(3, y, ToolbarWidth - 3, y + ButtonSize);
     }
 
     /// <summary>
@@ -111,7 +111,7 @@ public class LeftToolbarRenderer
     /// </summary>
     private bool IsButtonHovered(float mouseX, float mouseY, float buttonY)
     {
-        return mouseX >= 6 && mouseX <= ToolbarWidth - 6 &&
+        return mouseX >= 3 && mouseX <= ToolbarWidth - 3 &&
                mouseY >= buttonY && mouseY <= buttonY + ButtonSize;
     }
 

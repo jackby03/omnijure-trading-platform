@@ -178,6 +178,13 @@ public static partial class Program
             windowHandle: _window.Native!.Win32!.Value.Hwnd
         );
         _searchModalRenderer = new SearchModalRenderer();
+        
+        // Wire up View menu panel toggles
+        _toolbar.SetPanelCallbacks(
+            onTogglePanel: id => _layout.TogglePanel(id),
+            isPanelVisible: id => _layout.IsPanelVisible(id)
+        );
+        
         _buffer = new RingBuffer<Candle>(4096);
         _trades = new RingBuffer<MarketTrade>(1024);
         
@@ -238,20 +245,19 @@ public static partial class Program
         _assetDropdown = new UiDropdown(0, 0, 0, 0, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
         // NOT added to _uiDropdowns - asset selection uses search modal
 
-        // Fetch full list in background and preload crypto icons
-        Task.Run(async () => {
-            var fullList = await Omnijure.Core.Network.BinanceService.GetAllUsdtSymbolsAsync();
-            if (fullList != null && fullList.Count > 0)
-            {
-                _assetDropdown.Items = fullList;
-                _searchModal?.SetSymbols(fullList);
-
-                // Preload icons for the most popular cryptos
-                Omnijure.Visual.Rendering.CryptoIconProvider.PreloadIcons(
-                    fullList.Take(30)
-                );
-            }
-        });
+        // Curated token list (testing phase — only tokens with icons)
+        var curatedSymbols = new List<string>
+        {
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+            "ADAUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "LINKUSDT",
+            "SHIBUSDT", "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT",
+            "NEARUSDT", "ARBUSDT", "OPUSDT", "APTUSDT", "SUIUSDT",
+            "INJUSDT", "TRXUSDT", "BCHUSDT", "AAVEUSDT", "MKRUSDT",
+            "FILUSDT", "ALGOUSDT", "XLMUSDT", "VETUSDT", "HBARUSDT",
+            "FTMUSDT", "PEPEUSDT", "FETUSDT", "RENDERUSDT",
+        };
+        _searchModal?.SetSymbols(curatedSymbols);
+        CryptoIconProvider.PreloadIcons(curatedSymbols);
 
         // 2. Interval Dropdown (clickeable)
         var intervals = new List<string> { "1m", "5m", "15m", "1h", "4h", "1d" };

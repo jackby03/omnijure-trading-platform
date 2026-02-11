@@ -1,8 +1,11 @@
 using SkiaSharp;
 using Omnijure.Core.DataStructures;
 using Silk.NET.Maths;
+using System.Globalization;
 
 namespace Omnijure.Visual.Rendering;
+
+
 
 public class ChartRenderer
 {
@@ -247,7 +250,7 @@ public class ChartRenderer
             float y = MapPriceToY(p, minPrice, maxPrice, chartH);
 
             // Axis Label
-            string label = p < 10 ? p.ToString("F4") : p.ToString("F2");
+            string label = FormatPrice(p);
 
             float mx = chartW + 5;
             float my = y + 4;
@@ -274,7 +277,7 @@ public class ChartRenderer
 
         // Draw price label box on right axis (TradingView style)
         using var font = new SKFont(SKTypeface.Default, 11);
-        string priceLabel = currentPrice < 10 ? currentPrice.ToString("F4") : currentPrice.ToString("F2");
+        string priceLabel = FormatPrice(currentPrice);
         float labelWidth = font.MeasureText(priceLabel);
 
         using var boxPaint = new SKPaint
@@ -718,6 +721,18 @@ public class ChartRenderer
         float snappedX = (visibleCandles - 1 - snappedIndex) * candleWidth + candleWidth / 2f;
         return Math.Clamp(snappedX, 0, chartW);
     }
+
+    /// <summary>
+    /// Formats a price with comma thousands separator and appropriate decimal places.
+    /// </summary>
+    private static readonly CultureInfo PriceCulture = CultureInfo.InvariantCulture;
+    private static string FormatPrice(float price)
+    {
+        if (price < 0.01f) return price.ToString("F6", PriceCulture);
+        if (price < 1f)    return price.ToString("F4", PriceCulture);
+        if (price < 10f)   return price.ToString("F4", PriceCulture);
+        return price.ToString("N2", PriceCulture);
+    }
     
     private void DrawCrosshairLabels(SKCanvas canvas, float x, float y, int chartW, int chartH, float min, float max, RingBuffer<Candle> buffer, int scrollOffset, int visible, float candleWidth, string interval)
     {
@@ -734,7 +749,7 @@ public class ChartRenderer
         float norm = (chartH - y) / chartH;
         float price = min + (norm * range);
         
-        string priceLabel = price.ToString("F2");
+        string priceLabel = FormatPrice(price);
         float pw = textPaint.MeasureText(priceLabel);
         float ph = 14; 
         
