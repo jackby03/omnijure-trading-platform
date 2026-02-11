@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://i.imgur.com/6HCt00N.png" alt="Omnijure TDS" width="100%" />
+  <img src="https://i.imgur.com/5j7BRNw.png" alt="Omnijure TDS" width="100%" />
 </p>
 
 <h1 align="center">Omnijure TDS</h1>
