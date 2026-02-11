@@ -25,6 +25,7 @@ public class LayoutManager
     
     // Panel scroll state: panelId -> scrollY offset
     private readonly Dictionary<string, float> _panelScrollOffsets = new();
+    private float _aiChatContentHeight = 600;
     
     // Legacy properties for backward compatibility
     public bool IsResizingLeft => false;
@@ -368,32 +369,12 @@ public class LayoutManager
             float pad = 10;
             float chatTop = 48;
             float inputH = 42;
-            
-            // Header
-            paint.Color = new SKColor(70, 140, 255);
-            canvas.DrawText("Omnijure AI", 12, 18, fontBold, paint);
-            
-            // AI sparkle icon
-            SvgIconRenderer.DrawIcon(canvas, SvgIconRenderer.Icon.Star,
-                fontBold.MeasureText("Omnijure AI") + 16, 6, 12, new SKColor(70, 140, 255));
-            
-            paint.Color = new SKColor(70, 75, 85);
-            canvas.DrawText("GPT-4o  |  Connected", 12, 34, fontSmall, paint);
-            
-            // Online indicator
-            paint.Color = new SKColor(46, 204, 113);
-            paint.Style = SKPaintStyle.Fill;
-            canvas.DrawCircle(width - 16, 26, 4, paint);
+            float scrollOffset = _panelScrollOffsets.GetValueOrDefault(PanelDefinitions.AI_ASSISTANT, 0);
 
-            // Separator
-            paint.Color = new SKColor(35, 40, 50);
-            paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = 1;
-            canvas.DrawLine(8, 42, width - 8, 42, paint);
-
-            // Chat area background
+            // ========================================
+            // STEP 1: Chat bubbles (scrollable content)
+            // ========================================
             paint.Style = SKPaintStyle.Fill;
-            float chatBottom = height - inputH - 8;
             float y = chatTop + 12;
 
             // ?? User message 1 ??
@@ -410,16 +391,96 @@ public class LayoutManager
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, true, "Run RSI divergence scan on top 10 pairs", pad);
 
-            // ?? AI response 2 (with code block) ??
+            // ?? AI response 2 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, false,
                 "Scanning 10 pairs for RSI divergence...\n\n[+] ETHUSDT - Bullish divergence (RSI 34)\n[+] SOLUSDT - Bullish divergence (RSI 29)\n[!] BNBUSDT - Neutral (RSI 48)\n[-] XRPUSDT - Bearish divergence (RSI 72)",
                 pad);
 
-            // Input box
-            paint.Color = new SKColor(28, 32, 40);
+            // ?? User message 3 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, true, "Set up a grid bot for ETH between $3,200-$3,600", pad);
+
+            // ?? AI response 3 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, false,
+                "Grid bot configured:\n\n> Pair: ETHUSDT\n> Range: $3,200 - $3,600\n> Grid levels: 20\n> Investment: $500 USDT\n> Grid spacing: $20 (0.56%)\n\nEstimated profit per grid: $1.12\nAnnualized return: ~18-24% in range\n\nReady to deploy. Type 'confirm' to start.",
+                pad);
+
+            // ?? User message 4 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, true, "Show me the top gainers in the last 4h", pad);
+
+            // ?? AI response 4 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, false,
+                "Top gainers (4h):\n\n[+] PEPEUSDT  +8.42%  Vol: $124M\n[+] SUIUSDT   +5.17%  Vol: $89M\n[+] FETUSDT   +4.83%  Vol: $67M\n[+] INJUSDT   +3.91%  Vol: $52M\n[+] ARBUSDT   +3.24%  Vol: $41M\n\nPEPE shows strong momentum with volume breakout above 20-day average.",
+                pad);
+
+            // ?? User message 5 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, true, "What's the current market sentiment?", pad);
+
+            // ?? AI response 5 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, false,
+                "Market Sentiment Analysis:\n\nFear & Greed Index: 72 (Greed)\nBTC Dominance: 54.2% (+0.3%)\nTotal Market Cap: $2.48T\n\n[+] Funding rates positive but moderate\n[+] Open interest rising steadily\n[!] Whale accumulation detected on BTC\n[-] Some altcoins showing exhaustion\n\nOverall: Cautiously bullish. Consider trailing stops on long positions.",
+                pad);
+
+            // ?? User message 6 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, true, "Backtest a simple EMA crossover on SOL", pad);
+
+            // ?? AI response 6 ??
+            y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
+                y, false,
+                "Backtest: EMA 9/21 Crossover on SOLUSDT\nPeriod: Last 30 days (1h candles)\n\nResults:\n> Total trades: 14\n> Win rate: 64.3%\n> Profit factor: 1.82\n> Max drawdown: -3.4%\n> Net return: +8.7%\n> Sharpe ratio: 1.45\n\nThe strategy performs well in trending markets but suffers during consolidation. Consider adding a volatility filter.",
+                pad);
+
+            // Store final Y for scroll height calculation
+            _aiChatContentHeight = y + 16;
+
+            // ========================================
+            // STEP 2: Pinned header (drawn AFTER bubbles to cover them)
+            // ========================================
+            float fixedTop = scrollOffset;
+            
+            // Opaque background to mask scrolled bubbles behind header
+            paint.Color = new SKColor(18, 20, 24);
             paint.Style = SKPaintStyle.Fill;
-            var inputRect = new SKRect(8, height - inputH, width - 8, height - 8);
+            canvas.DrawRect(0, fixedTop, width, chatTop + 2, paint);
+            
+            paint.Color = new SKColor(70, 140, 255);
+            canvas.DrawText("Omnijure AI", 12, fixedTop + 18, fontBold, paint);
+            
+            SvgIconRenderer.DrawIcon(canvas, SvgIconRenderer.Icon.Star,
+                fontBold.MeasureText("Omnijure AI") + 16, fixedTop + 6, 12, new SKColor(70, 140, 255));
+            
+            paint.Color = new SKColor(70, 75, 85);
+            canvas.DrawText("GPT-4o  |  Connected", 12, fixedTop + 34, fontSmall, paint);
+            
+            paint.Color = new SKColor(46, 204, 113);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawCircle(width - 16, fixedTop + 26, 4, paint);
+
+            // Separator
+            paint.Color = new SKColor(35, 40, 50);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            canvas.DrawLine(8, fixedTop + 42, width - 8, fixedTop + 42, paint);
+
+            // ========================================
+            // STEP 3: Pinned input box (drawn AFTER bubbles to cover them)
+            // ========================================
+            float fixedBottom = height + scrollOffset;
+            
+            // Opaque background to mask scrolled bubbles behind input
+            paint.Color = new SKColor(18, 20, 24);
+            paint.Style = SKPaintStyle.Fill;
+            canvas.DrawRect(0, fixedBottom - inputH - 10, width, inputH + 12, paint);
+            
+            paint.Color = new SKColor(28, 32, 40);
+            var inputRect = new SKRect(8, fixedBottom - inputH, width - 8, fixedBottom - 8);
             canvas.DrawRoundRect(inputRect, 8, 8, paint);
             
             paint.Color = new SKColor(40, 45, 55);
@@ -429,18 +490,19 @@ public class LayoutManager
             
             paint.Style = SKPaintStyle.Fill;
             paint.Color = new SKColor(80, 85, 95);
-            canvas.DrawText("Ask about patterns, strategies, or scan markets...", 16, height - 22, fontSmall, paint);
+            canvas.DrawText("Ask about patterns, strategies, or scan markets...", 16, fixedBottom - 22, fontSmall, paint);
             
             // Send button
             paint.Color = new SKColor(56, 139, 253);
-            canvas.DrawRoundRect(new SKRect(width - 40, height - inputH + 6, width - 14, height - 14), 4, 4, paint);
+            canvas.DrawRoundRect(new SKRect(width - 40, fixedBottom - inputH + 6, width - 14, fixedBottom - 14), 4, 4, paint);
             paint.Color = SKColors.White;
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 2;
             paint.StrokeCap = SKStrokeCap.Round;
-            canvas.DrawLine(width - 32, height - 24, width - 22, height - 24, paint);
-            canvas.DrawLine(width - 25, height - 30, width - 22, height - 24, paint);
-            canvas.DrawLine(width - 25, height - 18, width - 22, height - 24, paint);
+            float sendCy = fixedBottom - inputH / 2 - 4;
+            canvas.DrawLine(width - 32, sendCy, width - 22, sendCy, paint);
+            canvas.DrawLine(width - 25, sendCy - 6, width - 22, sendCy, paint);
+            canvas.DrawLine(width - 25, sendCy + 6, width - 22, sendCy, paint);
         }
         finally
         {
@@ -1035,9 +1097,9 @@ public class LayoutManager
         float fixedHeaderH = 60;
         return panel.Config.Id switch
         {
-            PanelDefinitions.POSITIONS => fixedHeaderH + (48 * 4) + 10, // 4 rows * 48px
+            PanelDefinitions.POSITIONS => fixedHeaderH + (48 * 4) + 10,
             PanelDefinitions.PORTFOLIO => 520,
-            PanelDefinitions.AI_ASSISTANT => 600,
+            PanelDefinitions.AI_ASSISTANT => _aiChatContentHeight + 60, // dynamic from rendered content + input box
             _ => panel.ContentBounds.Height
         };
     }
