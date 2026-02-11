@@ -10,7 +10,7 @@ public class LayoutManager
     // Layout Config
     public float HeaderHeight { get; private set; } = 28;
     
-    // NEW: Panel System sin barras de título
+    // NEW: Panel System sin barras de tï¿½tulo
     private readonly PanelSystem _panelSystem;
 
     // Bounds
@@ -26,6 +26,7 @@ public class LayoutManager
     // Panel scroll state: panelId -> scrollY offset
     private readonly Dictionary<string, float> _panelScrollOffsets = new();
     private float _aiChatContentHeight = 600;
+    private bool _aiScrollInitialized;
     
     // Legacy properties for backward compatibility
     public bool IsResizingLeft => false;
@@ -47,7 +48,7 @@ public class LayoutManager
         // 1. Update panel system (calcula posiciones de paneles)
         _panelSystem.Update(width, height, HeaderHeight);
 
-        // 2. Get chart area (área no ocupada por paneles dockeados)
+        // 2. Get chart area (ï¿½rea no ocupada por paneles dockeados)
         var chartArea = _panelSystem.GetChartArea(width, height, HeaderHeight);
 
         // 3. Chart completo (incluye toolbar interno)
@@ -84,7 +85,7 @@ public class LayoutManager
 
     public Omnijure.Visual.Drawing.DrawingTool? HandleToolbarClick(float x, float y)
     {
-        // El toolbar está dentro del ContentBounds del chart panel
+        // El toolbar estï¿½ dentro del ContentBounds del chart panel
         var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
         if (chartPanel == null || chartPanel.IsClosed) return null;
         
@@ -295,8 +296,7 @@ public class LayoutManager
                 RenderPositionsPanel(canvas, contentWidth, contentHeight, scrollY);
                 break;
             case PanelDefinitions.AI_ASSISTANT:
-                canvas.Translate(0, -scrollY);
-                RenderAIAssistantPanel(canvas, contentWidth, contentHeight);
+                RenderAIAssistantPanel(canvas, contentWidth, contentHeight, scrollY);
                 break;
             case PanelDefinitions.PORTFOLIO:
                 canvas.Translate(0, -scrollY);
@@ -319,15 +319,32 @@ public class LayoutManager
         if (panel.Config.Id is PanelDefinitions.PORTFOLIO or PanelDefinitions.AI_ASSISTANT)
         {
             float totalH = GetPanelContentHeight(panel);
-            float viewH = panel.ContentBounds.Height;
             float scroll = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
-            
-            if (totalH > viewH)
+
+            if (panel.Config.Id == PanelDefinitions.AI_ASSISTANT)
             {
-                DrawScrollbar(canvas, 
-                    panel.ContentBounds.Right - 6, 
-                    panel.ContentBounds.Top,
-                    viewH, totalH, scroll);
+                // Scrollbar in the scroll zone between header and input
+                float headerH = 48;
+                float inputH = 52;
+                float scrollZoneH = GetAiScrollZoneHeight(panel);
+                if (totalH > scrollZoneH)
+                {
+                    DrawScrollbar(canvas,
+                        panel.ContentBounds.Right - 6,
+                        panel.ContentBounds.Top + headerH,
+                        scrollZoneH, totalH, scroll);
+                }
+            }
+            else
+            {
+                float viewH = panel.ContentBounds.Height;
+                if (totalH > viewH)
+                {
+                    DrawScrollbar(canvas,
+                        panel.ContentBounds.Right - 6,
+                        panel.ContentBounds.Top,
+                        viewH, totalH, scroll);
+                }
             }
         }
     }
@@ -355,7 +372,7 @@ public class LayoutManager
         RenderSinglePanelContent(canvas, panel);
     }
 
-    private void RenderAIAssistantPanel(SKCanvas canvas, float width, float height)
+    private void RenderAIAssistantPanel(SKCanvas canvas, float width, float height, float scrollY)
     {
         var paint = PaintPool.Instance.Rent();
         try
@@ -364,145 +381,152 @@ public class LayoutManager
             using var fontNormal = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
             using var fontSmall = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 10);
             using var fontCode = new SKFont(SKTypeface.FromFamilyName("Cascadia Code", SKFontStyle.Normal), 10);
-            
+
             paint.IsAntialias = true;
             float pad = 10;
-            float chatTop = 48;
-            float inputH = 42;
-            float scrollOffset = _panelScrollOffsets.GetValueOrDefault(PanelDefinitions.AI_ASSISTANT, 0);
+            float headerH = 48;
+            float inputH = 52;
+
+            float scrollZoneTop = headerH;
+            float scrollZoneBottom = height - inputH;
+            float scrollZoneH = scrollZoneBottom - scrollZoneTop;
 
             // ========================================
-            // STEP 1: Chat bubbles (scrollable content)
+            // STEP 1: Chat bubbles (clipped to scroll zone, translated by -scrollY)
             // ========================================
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, scrollZoneTop, width, scrollZoneBottom));
+            canvas.Translate(0, -scrollY);
+
             paint.Style = SKPaintStyle.Fill;
-            float y = chatTop + 12;
+            float y = headerH + 8;
 
-            // ?? User message 1 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, true, "What pattern is forming on BTCUSDT 1h?", pad);
-            
-            // ?? AI response 1 ??
+                y, true, "What pattern is forming on BTCUSDT 1h?", pad, "2h ago");
+
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, false, 
+                y, false,
                 "I see a bullish flag forming on BTC/USDT 1h chart. The price consolidated between $68,800-$69,100 after a strong impulse move.\n\n> Entry: Break above $69,100\n> Target: $69,800 (+1.0%)\n> Stop: $68,600 (-0.7%)\n> R:R ratio: 1.43",
-                pad);
+                pad, "2h ago");
 
-            // ?? User message 2 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, true, "Run RSI divergence scan on top 10 pairs", pad);
+                y, true, "Run RSI divergence scan on top 10 pairs", pad, "1h 45m ago");
 
-            // ?? AI response 2 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, false,
                 "Scanning 10 pairs for RSI divergence...\n\n[+] ETHUSDT - Bullish divergence (RSI 34)\n[+] SOLUSDT - Bullish divergence (RSI 29)\n[!] BNBUSDT - Neutral (RSI 48)\n[-] XRPUSDT - Bearish divergence (RSI 72)",
-                pad);
+                pad, "1h 44m ago");
 
-            // ?? User message 3 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, true, "Set up a grid bot for ETH between $3,200-$3,600", pad);
+                y, true, "Set up a grid bot for ETH between $3,200-$3,600", pad, "1h 20m ago");
 
-            // ?? AI response 3 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, false,
                 "Grid bot configured:\n\n> Pair: ETHUSDT\n> Range: $3,200 - $3,600\n> Grid levels: 20\n> Investment: $500 USDT\n> Grid spacing: $20 (0.56%)\n\nEstimated profit per grid: $1.12\nAnnualized return: ~18-24% in range\n\nReady to deploy. Type 'confirm' to start.",
-                pad);
+                pad, "1h 19m ago");
 
-            // ?? User message 4 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, true, "Show me the top gainers in the last 4h", pad);
+                y, true, "Show me the top gainers in the last 4h", pad, "48m ago");
 
-            // ?? AI response 4 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, false,
                 "Top gainers (4h):\n\n[+] PEPEUSDT  +8.42%  Vol: $124M\n[+] SUIUSDT   +5.17%  Vol: $89M\n[+] FETUSDT   +4.83%  Vol: $67M\n[+] INJUSDT   +3.91%  Vol: $52M\n[+] ARBUSDT   +3.24%  Vol: $41M\n\nPEPE shows strong momentum with volume breakout above 20-day average.",
-                pad);
+                pad, "47m ago");
 
-            // ?? User message 5 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, true, "What's the current market sentiment?", pad);
+                y, true, "What's the current market sentiment?", pad, "12m ago");
 
-            // ?? AI response 5 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, false,
                 "Market Sentiment Analysis:\n\nFear & Greed Index: 72 (Greed)\nBTC Dominance: 54.2% (+0.3%)\nTotal Market Cap: $2.48T\n\n[+] Funding rates positive but moderate\n[+] Open interest rising steadily\n[!] Whale accumulation detected on BTC\n[-] Some altcoins showing exhaustion\n\nOverall: Cautiously bullish. Consider trailing stops on long positions.",
-                pad);
+                pad, "11m ago");
 
-            // ?? User message 6 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
-                y, true, "Backtest a simple EMA crossover on SOL", pad);
+                y, true, "Backtest a simple EMA crossover on SOL", pad, "3m ago");
 
-            // ?? AI response 6 ??
             y = DrawChatBubble(canvas, paint, fontNormal, fontSmall, width,
                 y, false,
                 "Backtest: EMA 9/21 Crossover on SOLUSDT\nPeriod: Last 30 days (1h candles)\n\nResults:\n> Total trades: 14\n> Win rate: 64.3%\n> Profit factor: 1.82\n> Max drawdown: -3.4%\n> Net return: +8.7%\n> Sharpe ratio: 1.45\n\nThe strategy performs well in trending markets but suffers during consolidation. Consider adding a volatility filter.",
-                pad);
+                pad, "2m ago");
 
-            // Store final Y for scroll height calculation
-            _aiChatContentHeight = y + 16;
+            // Total height of all bubbles content (from headerH to final y)
+            float bubblesContentH = y + 8 - headerH;
+            _aiChatContentHeight = bubblesContentH;
+
+            canvas.Restore(); // restore scroll clip
+
+            // ---- Auto-scroll to bottom on first render ----
+            if (!_aiScrollInitialized && bubblesContentH > scrollZoneH)
+            {
+                _aiScrollInitialized = true;
+                _panelScrollOffsets[PanelDefinitions.AI_ASSISTANT] = bubblesContentH - scrollZoneH;
+            }
 
             // ========================================
-            // STEP 2: Pinned header (drawn AFTER bubbles to cover them)
+            // STEP 2: Fixed header (drawn OVER bubbles, no scroll)
             // ========================================
-            float fixedTop = scrollOffset;
-            
-            // Opaque background to mask scrolled bubbles behind header
             paint.Color = new SKColor(18, 20, 24);
             paint.Style = SKPaintStyle.Fill;
-            canvas.DrawRect(0, fixedTop, width, chatTop + 2, paint);
-            
+            canvas.DrawRect(0, 0, width, headerH, paint);
+
             paint.Color = new SKColor(70, 140, 255);
-            canvas.DrawText("Omnijure AI", 12, fixedTop + 18, fontBold, paint);
-            
+            canvas.DrawText("Omnijure AI", 12, 18, fontBold, paint);
+
             SvgIconRenderer.DrawIcon(canvas, SvgIconRenderer.Icon.Star,
-                fontBold.MeasureText("Omnijure AI") + 16, fixedTop + 6, 12, new SKColor(70, 140, 255));
-            
+                fontBold.MeasureText("Omnijure AI") + 16, 6, 12, new SKColor(70, 140, 255));
+
             paint.Color = new SKColor(70, 75, 85);
-            canvas.DrawText("GPT-4o  |  Connected", 12, fixedTop + 34, fontSmall, paint);
-            
+            canvas.DrawText("GPT-4o  |  Connected", 12, 34, fontSmall, paint);
+
             paint.Color = new SKColor(46, 204, 113);
             paint.Style = SKPaintStyle.Fill;
-            canvas.DrawCircle(width - 16, fixedTop + 26, 4, paint);
+            canvas.DrawCircle(width - 16, 26, 4, paint);
 
             // Separator
             paint.Color = new SKColor(35, 40, 50);
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 1;
-            canvas.DrawLine(8, fixedTop + 42, width - 8, fixedTop + 42, paint);
+            canvas.DrawLine(8, headerH - 6, width - 8, headerH - 6, paint);
 
             // ========================================
-            // STEP 3: Pinned input box (drawn AFTER bubbles to cover them)
+            // STEP 3: Fixed input box (drawn OVER bubbles, no scroll)
             // ========================================
-            float fixedBottom = height + scrollOffset;
-            
-            // Opaque background to mask scrolled bubbles behind input
+            float inputBoxH = 34;
+            float inputPad = 8;
+            float inputAreaTop = height - inputH;
+
             paint.Color = new SKColor(18, 20, 24);
             paint.Style = SKPaintStyle.Fill;
-            canvas.DrawRect(0, fixedBottom - inputH - 10, width, inputH + 12, paint);
-            
+            canvas.DrawRect(0, inputAreaTop, width, inputH, paint);
+
             paint.Color = new SKColor(28, 32, 40);
-            var inputRect = new SKRect(8, fixedBottom - inputH, width - 8, fixedBottom - 8);
+            var inputRect = new SKRect(inputPad, inputAreaTop + 8, width - inputPad, inputAreaTop + 8 + inputBoxH);
             canvas.DrawRoundRect(inputRect, 8, 8, paint);
-            
+
             paint.Color = new SKColor(40, 45, 55);
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 1;
             canvas.DrawRoundRect(inputRect, 8, 8, paint);
-            
+
             paint.Style = SKPaintStyle.Fill;
             paint.Color = new SKColor(80, 85, 95);
-            canvas.DrawText("Ask about patterns, strategies, or scan markets...", 16, fixedBottom - 22, fontSmall, paint);
-            
+            canvas.DrawText("Ask about patterns, strategies, or scan markets...", 16, inputAreaTop + 8 + inputBoxH / 2 + 4, fontSmall, paint);
+
             // Send button
+            float btnH = inputBoxH - 8;
+            float btnW = 28;
+            float btnX = width - inputPad - btnW - 4;
+            float btnY = inputAreaTop + 8 + 4;
             paint.Color = new SKColor(56, 139, 253);
-            canvas.DrawRoundRect(new SKRect(width - 40, fixedBottom - inputH + 6, width - 14, fixedBottom - 14), 4, 4, paint);
+            canvas.DrawRoundRect(new SKRect(btnX, btnY, btnX + btnW, btnY + btnH), 4, 4, paint);
             paint.Color = SKColors.White;
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = 2;
             paint.StrokeCap = SKStrokeCap.Round;
-            float sendCy = fixedBottom - inputH / 2 - 4;
-            canvas.DrawLine(width - 32, sendCy, width - 22, sendCy, paint);
-            canvas.DrawLine(width - 25, sendCy - 6, width - 22, sendCy, paint);
-            canvas.DrawLine(width - 25, sendCy + 6, width - 22, sendCy, paint);
+            float sendCy = btnY + btnH / 2;
+            canvas.DrawLine(btnX + 7, sendCy, btnX + btnW - 7, sendCy, paint);
+            canvas.DrawLine(btnX + btnW - 12, sendCy - 5, btnX + btnW - 7, sendCy, paint);
+            canvas.DrawLine(btnX + btnW - 12, sendCy + 5, btnX + btnW - 7, sendCy, paint);
         }
         finally
         {
@@ -510,13 +534,13 @@ public class LayoutManager
         }
     }
 
-    private float DrawChatBubble(SKCanvas canvas, SKPaint paint, SKFont font, SKFont timeFont, 
-        float panelW, float y, bool isUser, string text, float pad)
+    private float DrawChatBubble(SKCanvas canvas, SKPaint paint, SKFont font, SKFont timeFont,
+        float panelW, float y, bool isUser, string text, float pad, string timestamp = "just now")
     {
         float bubbleMaxW = panelW - pad * 2 - 20;
         float bubbleX = isUser ? pad + 20 : pad;
         float lineH = 15;
-        
+
         // Split text into lines (handle \n and word wrap)
         var lines = new List<string>();
         foreach (var segment in text.Split('\n'))
@@ -547,7 +571,7 @@ public class LayoutManager
         }
 
         var bubbleRect = new SKRect(bubbleX, y, bubbleX + bubbleW, y + bubbleH);
-        
+
         // Bubble background
         paint.Style = SKPaintStyle.Fill;
         paint.Color = isUser ? new SKColor(45, 75, 140) : new SKColor(28, 32, 40);
@@ -569,7 +593,7 @@ public class LayoutManager
                     paint.Color = new SKColor(220, 150, 150);
                 else
                     paint.Color = isUser ? new SKColor(220, 230, 245) : new SKColor(195, 200, 210);
-                    
+
                 canvas.DrawText(line, bubbleX + 10, textY, font, paint);
             }
             textY += lineH;
@@ -577,7 +601,7 @@ public class LayoutManager
 
         // Timestamp
         paint.Color = new SKColor(70, 75, 85);
-        string time = isUser ? "You \u2022 just now" : "AI \u2022 just now";
+        string time = isUser ? $"You \u2022 {timestamp}" : $"AI \u2022 {timestamp}";
         float tw = timeFont.MeasureText(time);
         float timeX = isUser ? bubbleX + bubbleW - tw - 4 : bubbleX + 4;
         canvas.DrawText(time, timeX, y + bubbleH + 12, timeFont, paint);
@@ -1065,7 +1089,7 @@ public class LayoutManager
 
             float contentHeight = GetPanelContentHeight(panel);
             float viewHeight = panel.ContentBounds.Height;
-            
+
             // For panels with fixed headers, scroll area is smaller
             if (panel.Config.Id == PanelDefinitions.POSITIONS)
             {
@@ -1078,9 +1102,20 @@ public class LayoutManager
                 _panelScrollOffsets[panel.Config.Id] = Math.Clamp(posCurrent - deltaY * 20f, 0, posMaxScroll);
                 return true;
             }
-            
+
+            // AI Assistant: scroll zone is between fixed header and fixed input
+            if (panel.Config.Id == PanelDefinitions.AI_ASSISTANT)
+            {
+                float scrollZoneH = GetAiScrollZoneHeight(panel);
+                if (contentHeight <= scrollZoneH) return true;
+                float aiMaxScroll = contentHeight - scrollZoneH;
+                float aiCurrent = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+                _panelScrollOffsets[panel.Config.Id] = Math.Clamp(aiCurrent - deltaY * 20f, 0, aiMaxScroll);
+                return true;
+            }
+
             if (contentHeight <= viewHeight) return true;
-            
+
             float maxScroll = contentHeight - viewHeight;
             float current = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
             float newScroll = Math.Clamp(current - deltaY * 20f, 0, maxScroll);
@@ -1099,9 +1134,22 @@ public class LayoutManager
         {
             PanelDefinitions.POSITIONS => fixedHeaderH + (48 * 4) + 10,
             PanelDefinitions.PORTFOLIO => 520,
-            PanelDefinitions.AI_ASSISTANT => _aiChatContentHeight + 60, // dynamic from rendered content + input box
+            // _aiChatContentHeight = total bubble content height (measured from headerH)
+            // The visible scroll zone = panel height - headerH(48) - inputH(52)
+            // So the scrollable content is just _aiChatContentHeight
+            PanelDefinitions.AI_ASSISTANT => _aiChatContentHeight,
             _ => panel.ContentBounds.Height
         };
+    }
+
+    /// <summary>
+    /// Returns the visible scroll zone height for AI chat (between header and input).
+    /// </summary>
+    private float GetAiScrollZoneHeight(DockablePanel panel)
+    {
+        float headerH = 48;
+        float inputH = 52;
+        return panel.ContentBounds.Height - headerH - inputH;
     }
 
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
