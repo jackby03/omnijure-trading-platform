@@ -1,3 +1,4 @@
+using Omnijure.Core.Settings;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -1450,6 +1451,58 @@ public class PanelSystem
         {
             chart.DynamicTitle = $"{symbol} \u2022 {interval} \u2022 {price:F2}";
         }
+    }
+
+    public List<PanelState> ExportLayout()
+    {
+        var states = new List<PanelState>();
+        foreach (var panel in _panels.Values)
+        {
+            states.Add(new PanelState
+            {
+                Id = panel.Config.Id,
+                Position = panel.Position.ToString(),
+                Width = panel.Width,
+                Height = panel.Height,
+                IsClosed = panel.IsClosed,
+                IsCollapsed = panel.IsCollapsed,
+                IsFloating = panel.IsFloating,
+                DockOrder = panel.DockOrder
+            });
+        }
+        return states;
+    }
+
+    public void ImportLayout(List<PanelState> states)
+    {
+        foreach (var state in states)
+        {
+            if (!_panels.TryGetValue(state.Id, out var panel)) continue;
+            if (Enum.TryParse<PanelPosition>(state.Position, out var pos))
+                panel.Position = pos;
+            panel.Width = state.Width;
+            panel.Height = state.Height;
+            panel.IsClosed = state.IsClosed;
+            panel.IsCollapsed = state.IsCollapsed;
+            panel.IsFloating = state.IsFloating;
+            panel.DockOrder = state.DockOrder;
+        }
+    }
+
+    public void ImportActiveTabs(string bottomTab, string leftTab, string rightTab)
+    {
+        if (!string.IsNullOrEmpty(bottomTab)) _activeBottomTabId = bottomTab;
+        if (!string.IsNullOrEmpty(leftTab)) _activeTabIds[PanelPosition.Left] = leftTab;
+        if (!string.IsNullOrEmpty(rightTab)) _activeTabIds[PanelPosition.Right] = rightTab;
+    }
+
+    public (string bottom, string left, string right) ExportActiveTabs()
+    {
+        return (
+            _activeBottomTabId,
+            _activeTabIds.GetValueOrDefault(PanelPosition.Left, ""),
+            _activeTabIds.GetValueOrDefault(PanelPosition.Right, "")
+        );
     }
 }
 

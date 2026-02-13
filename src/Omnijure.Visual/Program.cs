@@ -6,6 +6,7 @@ using SkiaSharp;
 using Omnijure.Visual.Rendering;
 using Omnijure.Core.DataStructures;
 using Omnijure.Core.Network;
+using Omnijure.Core.Settings;
 
 using System.Linq;
 using System.Text.Json;
@@ -23,6 +24,9 @@ public static partial class Program
     private static LayoutManager _layout;
     private static ToolbarRenderer _toolbar;
     private static SearchModalRenderer _searchModalRenderer;
+    private static SettingsModalRenderer _settingsModalRenderer;
+    private static UiSettingsModal _settingsModal;
+    private static SettingsManager _settings;
     private static Omnijure.Mind.ScriptEngine _mind;
     
     // Data
@@ -178,16 +182,62 @@ public static partial class Program
             windowHandle: _window.Native!.Win32!.Value.Hwnd
         );
         _searchModalRenderer = new SearchModalRenderer();
-        
+        _settingsModalRenderer = new SettingsModalRenderer();
+        _settingsModal = new UiSettingsModal();
+
+        // Load persistent settings
+        _settings = new SettingsManager();
+        _settings.Load();
+
+        // Apply chart defaults from settings
+        _currentSymbol = _settings.Current.Chart.DefaultSymbol;
+        _currentTimeframe = _settings.Current.Chart.DefaultTimeframe;
+        if (Enum.TryParse<ChartType>(_settings.Current.Chart.DefaultChartType, out var ct))
+            _chartType = ct;
+        _zoom = _settings.Current.Chart.DefaultZoom;
+
+        // Apply layout from settings
+        if (_settings.Current.Layout.Panels.Count > 0)
+        {
+            _layout.ImportLayout(_settings.Current.Layout.Panels);
+            _layout.ImportActiveTabs(
+                _settings.Current.Layout.ActiveBottomTab,
+                _settings.Current.Layout.ActiveLeftTab,
+                _settings.Current.Layout.ActiveRightTab);
+        }
+
         // Wire up View menu panel toggles
         _toolbar.SetPanelCallbacks(
             onTogglePanel: id => _layout.TogglePanel(id),
             isPanelVisible: id => _layout.IsPanelVisible(id)
         );
-        
+
+        // Wire up settings menu actions
+        _toolbar.SetSettingsCallback(() =>
+        {
+            _settingsModal.LoadFromSettings(_settings.Current);
+            _settingsModal.Open();
+        });
+
+        // Wire layout buttons
+        _settingsModalRenderer.OnSaveLayout = () =>
+        {
+            _settings.Current.Layout.Panels = _layout.ExportLayout();
+            var tabs = _layout.ExportActiveTabs();
+            _settings.Current.Layout.ActiveBottomTab = tabs.bottom;
+            _settings.Current.Layout.ActiveLeftTab = tabs.left;
+            _settings.Current.Layout.ActiveRightTab = tabs.right;
+            _settings.Save();
+        };
+        _settingsModalRenderer.OnResetLayout = () =>
+        {
+            _settings.Current.Layout.Panels.Clear();
+            _layout.ImportLayout(new List<PanelState>()); // Will use PanelDefinitions defaults
+        };
+
         _buffer = new RingBuffer<Candle>(4096);
         _trades = new RingBuffer<MarketTrade>(1024);
-        
+
         // 4. REAL DATA (The Metal)
         _orderBook = new OrderBook();
         _binance = new Omnijure.Core.Network.BinanceClient(_buffer, _orderBook, _trades);
@@ -316,6 +366,9 @@ public static partial class Program
 
     private static void OnScroll(IMouse arg1, ScrollWheel arg2)
     {
+        // Settings modal consumes all scroll
+        if (_settingsModal != null && _settingsModal.IsVisible) return;
+
         // Search modal has highest priority
         if (_searchModal != null && _searchModal.IsVisible)
         {
@@ -361,8 +414,27 @@ public static partial class Program
 
     private static void OnMouseDown(IMouse arg1, MouseButton arg2) 
     { 
-        if (arg2 == MouseButton.Left) 
+        if (arg2 == MouseButton.Left)
         {
+            // Settings modal (highest priority)
+            if (_settingsModal != null && _settingsModal.IsVisible)
+            {
+                bool inside = _settingsModalRenderer.HandleMouseDown(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y, _settingsModal);
+                if (!inside)
+                {
+                    _settingsModal.Close();
+                }
+                else if (_settingsModalRenderer.IsSaveClicked(_mousePos.X, _mousePos.Y))
+                {
+                    // Apply settings and save
+                    _settingsModal.SaveToSettings(_settings.Current);
+                    _settings.Save();
+                    _settingsModal.HasUnsavedChanges = false;
+                    _settingsModal.Close();
+                }
+                return;
+            }
+
             // Check if modal is visible and handle clicks
             if (_searchModal != null && _searchModal.IsVisible)
             {
@@ -576,8 +648,15 @@ public static partial class Program
         
         _mousePos = new Vector2D<float>(pos.X, pos.Y);
         
-        // Disable UI hover if search modal is visible
-        bool modalActive = _searchModal != null && (_searchModal.IsVisible || _searchModal.AnimationProgress > 0);
+        // Settings modal hover tracking
+        if (_settingsModal != null && (_settingsModal.IsVisible || _settingsModal.AnimationProgress > 0))
+        {
+            _settingsModalRenderer.HandleMouseMove(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y, _settingsModal);
+        }
+
+        // Disable UI hover if any modal is visible
+        bool settingsActive = _settingsModal != null && (_settingsModal.IsVisible || _settingsModal.AnimationProgress > 0);
+        bool modalActive = settingsActive || (_searchModal != null && (_searchModal.IsVisible || _searchModal.AnimationProgress > 0));
         
         // 0. UI Hover
         foreach(var dd in _uiDropdowns) 
@@ -882,7 +961,19 @@ public static partial class Program
                 _searchModalRenderer.Render(_surface.Canvas, _window.Size.X, _window.Size.Y, _searchModal);
             }
         }
-        
+
+        // Settings modal (rendered above search modal)
+        if (_settingsModal != null)
+        {
+            if (_settingsModal.IsVisible && _settingsModal.AnimationProgress < 1)
+                _settingsModal.AnimationProgress = Math.Min(1, _settingsModal.AnimationProgress + 0.12f);
+            else if (!_settingsModal.IsVisible && _settingsModal.AnimationProgress > 0)
+                _settingsModal.AnimationProgress = Math.Max(0, _settingsModal.AnimationProgress - 0.12f);
+
+            if (_settingsModal.AnimationProgress > 0)
+                _settingsModalRenderer.Render(_surface.Canvas, _window.Size.X, _window.Size.Y, _settingsModal);
+        }
+
         _surface.Canvas.Flush();
     }
     
@@ -904,6 +995,25 @@ public static partial class Program
 
     private static void OnClose()
     {
+        // Persist settings on close
+        if (_settings != null)
+        {
+            _settings.Current.Layout.Panels = _layout.ExportLayout();
+            var tabs = _layout.ExportActiveTabs();
+            _settings.Current.Layout.ActiveBottomTab = tabs.bottom;
+            _settings.Current.Layout.ActiveLeftTab = tabs.left;
+            _settings.Current.Layout.ActiveRightTab = tabs.right;
+            _settings.Current.Layout.WindowWidth = _window.Size.X;
+            _settings.Current.Layout.WindowHeight = _window.Size.Y;
+            _settings.Current.Layout.WindowX = _window.Position.X;
+            _settings.Current.Layout.WindowY = _window.Position.Y;
+            _settings.Current.Chart.DefaultSymbol = _currentSymbol;
+            _settings.Current.Chart.DefaultTimeframe = _currentTimeframe;
+            _settings.Current.Chart.DefaultChartType = _chartType.ToString();
+            _settings.Current.Chart.DefaultZoom = _zoom;
+            _settings.Save();
+        }
+
         _surface?.Dispose();
         _grContext?.Dispose();
     }

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(dotnet restore:*)"
     ]
   }
 }

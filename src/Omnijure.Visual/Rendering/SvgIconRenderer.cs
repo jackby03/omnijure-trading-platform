@@ -56,6 +56,14 @@ public static class SvgIconRenderer
         Dot,
         Info,
         
+        // Settings modal
+        Key,
+        Pencil,
+        Trash,
+        Check,
+        Plus,
+        Layout,
+
         // Brand
         Logo
     }
@@ -180,6 +188,24 @@ public static class SvgIconRenderer
                 break;
             case Icon.Info:
                 DrawInfo(canvas, paint, fillPaint);
+                break;
+            case Icon.Key:
+                DrawKey(canvas, paint);
+                break;
+            case Icon.Pencil:
+                DrawPencil(canvas, paint);
+                break;
+            case Icon.Trash:
+                DrawTrash(canvas, paint);
+                break;
+            case Icon.Check:
+                DrawCheck(canvas, paint);
+                break;
+            case Icon.Plus:
+                DrawPlus(canvas, paint);
+                break;
+            case Icon.Layout:
+                DrawLayout(canvas, paint);
                 break;
             case Icon.Logo:
                 DrawLogo(canvas, fillPaint);
@@ -539,6 +565,67 @@ public static class SvgIconRenderer
         canvas.DrawCircle(12, 12, 9, paint);
         canvas.DrawCircle(12, 7, 1.5f, fillPaint);
         canvas.DrawLine(12, 11, 12, 18, paint);
+    }
+
+    private static void DrawKey(SKCanvas canvas, SKPaint paint)
+    {
+        // Key head (circle)
+        canvas.DrawCircle(8, 8, 4, paint);
+        // Key shaft
+        canvas.DrawLine(12, 12, 21, 21, paint);
+        // Key teeth
+        canvas.DrawLine(18, 18, 21, 15, paint);
+        canvas.DrawLine(16, 16, 19, 13, paint);
+    }
+
+    private static void DrawPencil(SKCanvas canvas, SKPaint paint)
+    {
+        // Pencil body
+        canvas.DrawLine(4, 20, 18, 6, paint);
+        canvas.DrawLine(18, 6, 20, 4, paint);
+        // Tip
+        canvas.DrawLine(4, 20, 6, 18, paint);
+        // Eraser line
+        canvas.DrawLine(15, 9, 17, 7, paint);
+    }
+
+    private static void DrawTrash(SKCanvas canvas, SKPaint paint)
+    {
+        // Lid
+        canvas.DrawLine(5, 6, 19, 6, paint);
+        canvas.DrawLine(9, 6, 9, 4, paint);
+        canvas.DrawLine(15, 6, 15, 4, paint);
+        canvas.DrawLine(9, 4, 15, 4, paint);
+        // Body
+        canvas.DrawLine(6, 6, 7, 20, paint);
+        canvas.DrawLine(18, 6, 17, 20, paint);
+        canvas.DrawLine(7, 20, 17, 20, paint);
+        // Lines inside
+        canvas.DrawLine(10, 9, 10, 17, paint);
+        canvas.DrawLine(14, 9, 14, 17, paint);
+    }
+
+    private static void DrawCheck(SKCanvas canvas, SKPaint paint)
+    {
+        paint.StrokeWidth = 2.5f;
+        canvas.DrawLine(5, 12, 10, 18, paint);
+        canvas.DrawLine(10, 18, 20, 6, paint);
+    }
+
+    private static void DrawPlus(SKCanvas canvas, SKPaint paint)
+    {
+        canvas.DrawLine(12, 5, 12, 19, paint);
+        canvas.DrawLine(5, 12, 19, 12, paint);
+    }
+
+    private static void DrawLayout(SKCanvas canvas, SKPaint paint)
+    {
+        // Outer rect
+        canvas.DrawRoundRect(new SKRect(3, 3, 21, 21), 2, 2, paint);
+        // Vertical divider
+        canvas.DrawLine(10, 3, 10, 21, paint);
+        // Horizontal divider (right side)
+        canvas.DrawLine(10, 12, 21, 12, paint);
     }
 
     private static SKPicture? _logoPicture;

@@ -12,6 +12,15 @@ public static partial class Program
 {
     private static void OnKeyChar(IKeyboard arg1, char arg2)
     {
+        // Settings modal text input
+        if (_settingsModal != null && _settingsModal.IsVisible)
+        {
+            if (char.IsControl(arg2)) return;
+            _settingsModal.FocusedInput?.AddChar(arg2);
+            _settingsModal.HasUnsavedChanges = true;
+            return;
+        }
+
         if (_searchModal != null && _searchModal.IsVisible)
         {
             if (char.IsControl(arg2)) return;
@@ -37,7 +46,39 @@ public static partial class Program
 
     private static void OnKeyDown(IKeyboard arg1, Key arg2, int arg3)
     {
-        // Ctrl+K ? search modal
+        // Ctrl+, -> settings modal
+        if (arg1.IsKeyPressed(Key.ControlLeft) && arg2 == Key.Comma)
+        {
+            if (_settingsModal != null)
+            {
+                _settingsModal.LoadFromSettings(_settings.Current);
+                _settingsModal.Open();
+            }
+            return;
+        }
+
+        // Settings modal keys
+        if (_settingsModal != null && _settingsModal.IsVisible)
+        {
+            switch (arg2)
+            {
+                case Key.Escape:
+                    _settingsModal.Close();
+                    break;
+                case Key.Backspace:
+                    _settingsModal.FocusedInput?.Backspace();
+                    break;
+                case Key.Delete:
+                    _settingsModal.FocusedInput?.Delete();
+                    break;
+                case Key.Tab:
+                    _settingsModalRenderer.FocusNextInput(_settingsModal);
+                    break;
+            }
+            return;
+        }
+
+        // Ctrl+K -> search modal
         if (arg1.IsKeyPressed(Key.ControlLeft) && arg2 == Key.K)
         {
             if (_searchModal != null)

@@ -1,3 +1,4 @@
+using Omnijure.Core.Settings;
 using SkiaSharp;
 using Silk.NET.Maths;
 using Omnijure.Core.DataStructures;
@@ -1492,4 +1493,10 @@ public class LayoutManager
 
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
     public bool IsResizingPanel => _panelSystem.IsResizing;
+
+    // Layout persistence
+    public List<PanelState> ExportLayout() => _panelSystem.ExportLayout();
+    public void ImportLayout(List<PanelState> states) => _panelSystem.ImportLayout(states);
+    public void ImportActiveTabs(string bottom, string left, string right) => _panelSystem.ImportActiveTabs(bottom, left, right);
+    public (string bottom, string left, string right) ExportActiveTabs() => _panelSystem.ExportActiveTabs();
 }

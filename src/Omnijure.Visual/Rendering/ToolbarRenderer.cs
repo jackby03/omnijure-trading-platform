@@ -63,14 +63,20 @@ public class ToolbarRenderer
     private string? _openMenu;
     private Action<string>? _onTogglePanel;
     private Func<string, bool>? _isPanelVisible;
+    private Action? _onOpenSettings;
     private readonly List<(string label, SKRect rect)> _menuItemRects = new();
     private readonly List<(string id, string label, SKRect rect)> _submenuItemRects = new();
     private SKRect _submenuBounds;
-    
+
     public void SetPanelCallbacks(Action<string> onTogglePanel, Func<string, bool> isPanelVisible)
     {
         _onTogglePanel = onTogglePanel;
         _isPanelVisible = isPanelVisible;
+    }
+
+    public void SetSettingsCallback(Action onOpenSettings)
+    {
+        _onOpenSettings = onOpenSettings;
     }
     
     // Win32 P/Invoke
@@ -324,6 +330,7 @@ public class ToolbarRenderer
                 if (rect.Contains(x, y))
                 {
                     if (id.StartsWith("toggle:")) _onTogglePanel?.Invoke(id[7..]);
+                    else if (id is "action:settings" or "action:api_keys") _onOpenSettings?.Invoke();
                     _openMenu = null;
                     return true;
                 }
@@ -582,7 +589,7 @@ public class ToolbarRenderer
             ("", "Export Data...", null, false, false),
             ("", "Import Strategy...", null, false, false),
             ("", "", null, true, false),
-            ("", "Settings", "Ctrl+,", false, false),
+            ("action:settings", "Settings", "Ctrl+,", false, false),
             ("", "", null, true, false),
             ("", "Exit", "Alt+F4", false, false),
         ],
@@ -627,7 +634,7 @@ public class ToolbarRenderer
             ("", "Backtester", null, false, false),
             ("", "Indicator Manager", null, false, false),
             ("", "", null, true, false),
-            ("", "API Keys...", null, false, false),
+            ("action:api_keys", "API Keys...", null, false, false),
             ("", "Notifications...", null, false, false),
             ("", "", null, true, false),
             ("", "Theme", null, false, false),
