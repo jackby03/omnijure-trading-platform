@@ -29,12 +29,9 @@ public static partial class Program
     private static SettingsManager _settings;
     private static Omnijure.Mind.ScriptEngine _mind;
     
-    // Data
-    private static BinanceClient _binance;
-    private static OrderBook _orderBook;
-    private static RingBuffer<Candle> _buffer;
-    private static RingBuffer<MarketTrade> _trades;
-    
+    // Chart Tabs
+    private static ChartTabManager _chartTabs;
+
     // UI Elements
     private static List<UiButton> _uiButtons = new List<UiButton>();
     private static List<UiDropdown> _uiDropdowns = new List<UiDropdown>();
@@ -43,27 +40,12 @@ public static partial class Program
     private static UiDropdown _chartTypeDropdown;
     private static UiSearchBox _searchBox;
     private static UiSearchModal _searchModal;
-    
-    // State
-    private static string _currentSymbol = "BTCUSDT";
-    private static string _currentTimeframe = "1m";
-    private static Omnijure.Visual.Rendering.ChartType _chartType = Omnijure.Visual.Rendering.ChartType.Candles;
 
-    // Interaction State
-    private static float _zoom = 1.0f; 
-    private static int _scrollOffset = 0;
+    // Shared Interaction State (not per-tab)
     private static bool _isDragging = false;
     private static Vector2D<float> _lastMousePos;
     private static Vector2D<float> _mousePos;
-    
-    // Viewport State
     private static bool _isResizingPrice = false;
-    private static bool _autoScaleY = true;
-    private static float _viewMinY;
-    private static float _viewMaxY;
-
-    // Drawing Tools State
-    private static Omnijure.Visual.Drawing.DrawingToolState _drawingState = new();
 
     public static void Main(string[] args)
     {
@@ -189,12 +171,9 @@ public static partial class Program
         _settings = new SettingsManager();
         _settings.Load();
 
-        // Apply chart defaults from settings
-        _currentSymbol = _settings.Current.Chart.DefaultSymbol;
-        _currentTimeframe = _settings.Current.Chart.DefaultTimeframe;
-        if (Enum.TryParse<ChartType>(_settings.Current.Chart.DefaultChartType, out var ct))
-            _chartType = ct;
-        _zoom = _settings.Current.Chart.DefaultZoom;
+        // Initialize chart tab manager
+        _chartTabs = new ChartTabManager();
+        _layout.SetChartTabs(_chartTabs);
 
         // Apply layout from settings
         if (_settings.Current.Layout.Panels.Count > 0)
@@ -235,13 +214,22 @@ public static partial class Program
             _layout.ImportLayout(new List<PanelState>()); // Will use PanelDefinitions defaults
         };
 
-        _buffer = new RingBuffer<Candle>(4096);
-        _trades = new RingBuffer<MarketTrade>(1024);
-
-        // 4. REAL DATA (The Metal)
-        _orderBook = new OrderBook();
-        _binance = new Omnijure.Core.Network.BinanceClient(_buffer, _orderBook, _trades);
-        _ = _binance.ConnectAsync(_currentSymbol, _currentTimeframe);
+        // 4. REAL DATA (The Metal) — Restore tabs from settings or create default
+        if (_settings.Current.Chart.Tabs.Count > 0)
+        {
+            foreach (var saved in _settings.Current.Chart.Tabs)
+            {
+                var tab = _chartTabs.AddTab(saved.Symbol, saved.Timeframe);
+                if (Enum.TryParse<ChartType>(saved.ChartType, out var ct))
+                    tab.ChartType = ct;
+                tab.Zoom = saved.Zoom;
+            }
+            _chartTabs.SwitchTo(Math.Clamp(_settings.Current.Chart.ActiveTabIndex, 0, _chartTabs.Count - 1));
+        }
+        else
+        {
+            _chartTabs.AddTab(_settings.Current.Chart.DefaultSymbol, _settings.Current.Chart.DefaultTimeframe);
+        }
         
         // 3. Init Mind
         try {
@@ -262,7 +250,7 @@ public static partial class Program
             while (true)
             {
                 try {
-                    string currentSymbol = _currentSymbol; 
+                    string currentSymbol = _chartTabs?.ActiveTab?.Symbol ?? "BTCUSDT";
                     var response = await httpClient.GetStringAsync($"https://api.binance.com/api/v3/ticker/24hr?symbol={currentSymbol}");
                     using var doc = JsonDocument.Parse(response);
                     float price = float.Parse(doc.RootElement.GetProperty("lastPrice").GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture);
@@ -292,7 +280,7 @@ public static partial class Program
 
         // 1. Asset Dropdown (data only - not clickeable, uses search modal)
         var assets = new List<string> { "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT" };
-        _assetDropdown = new UiDropdown(0, 0, 0, 0, "Asset", assets, (s) => SwitchContext(s, _currentTimeframe));
+        _assetDropdown = new UiDropdown(0, 0, 0, 0, "Asset", assets, (s) => SwitchContext(s, _chartTabs.ActiveTab.Timeframe));
         // NOT added to _uiDropdowns - asset selection uses search modal
 
         // Curated token list (testing phase — only tokens with icons)
@@ -311,15 +299,16 @@ public static partial class Program
 
         // 2. Interval Dropdown (clickeable)
         var intervals = new List<string> { "1m", "5m", "15m", "1h", "4h", "1d" };
-        _intervalDropdown = new UiDropdown(0, 0, 0, 0, "Interval", intervals, (tf) => SwitchContext(_currentSymbol, tf));
+        _intervalDropdown = new UiDropdown(0, 0, 0, 0, "Interval", intervals, (tf) => SwitchContext(_chartTabs.ActiveTab.Symbol, tf));
         _uiDropdowns.Add(_intervalDropdown);
 
         // 3. Chart Type Dropdown (data only - rendered in toolbar, not as separate dropdown)
         var chartTypes = new List<string> { "Candles", "Line", "Area" };
         _chartTypeDropdown = new UiDropdown(0, 0, 0, 0, "Chart", chartTypes, (type) => {
-            if (type == "Candles") _chartType = ChartType.Candles;
-            else if (type == "Line") _chartType = ChartType.Line;
-            else if (type == "Area") _chartType = ChartType.Area;
+            var tab = _chartTabs.ActiveTab;
+            if (type == "Candles") tab.ChartType = ChartType.Candles;
+            else if (type == "Line") tab.ChartType = ChartType.Line;
+            else if (type == "Area") tab.ChartType = ChartType.Area;
         });
     }
 
@@ -327,41 +316,41 @@ public static partial class Program
 
     private static void SwitchContext(string symbol, string interval)
     {
-        _currentSymbol = symbol;
-        _currentTimeframe = interval;
         Console.WriteLine($"[Interface] Switching to {symbol} {interval}...");
-        _buffer.Clear();
+        _chartTabs.SwitchContext(symbol, interval);
 
-        // Reset viewport and zoom state
-        _zoom = 1.0f;
-        _scrollOffset = 0;
-        _autoScaleY = true;
-        _viewMinY = 0;
-        _viewMaxY = 0;
-
-        // Clear all drawings when switching symbols
-        _drawingState.Objects.Clear();
-        _drawingState.CurrentDrawing = null;
-        _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
+        var tab = _chartTabs.ActiveTab;
 
         // Update Title
-        _window.Title = $"Omnijure - {symbol} [{interval}]";
+        _window.Title = $"Omnijure - {tab.Symbol} [{tab.Timeframe}]";
 
         // Update dropdowns selected items (don't recreate UI)
         if (_assetDropdown != null)
+            _assetDropdown.SelectedItem = tab.Symbol;
+        if (_intervalDropdown != null)
+            _intervalDropdown.SelectedItem = tab.Timeframe;
+        if (_searchBox != null)
+            _searchBox.Placeholder = tab.Symbol;
+    }
+
+    /// <summary>
+    /// Syncs toolbar UI with the active tab's state (called after tab switch).
+    /// </summary>
+    private static void SyncUiWithActiveTab()
+    {
+        var tab = _chartTabs.ActiveTab;
+        if (tab == null) return;
+
+        _window.Title = $"Omnijure - {tab.Symbol} [{tab.Timeframe}]";
+        if (_assetDropdown != null)
         {
-            _assetDropdown.SelectedItem = symbol;
+            _assetDropdown.SelectedItem = tab.Symbol;
+            _assetDropdown.CurrentPrice = 0; // Will be updated by ticker fetch
         }
         if (_intervalDropdown != null)
-        {
-            _intervalDropdown.SelectedItem = interval;
-        }
+            _intervalDropdown.SelectedItem = tab.Timeframe;
         if (_searchBox != null)
-        {
-            _searchBox.Placeholder = symbol;
-        }
-
-        _ = _binance.ConnectAsync(symbol, interval);
+            _searchBox.Placeholder = tab.Symbol;
     }
 
     private static void OnScroll(IMouse arg1, ScrollWheel arg2)
@@ -395,21 +384,22 @@ public static partial class Program
             return;
 
         // Scroll on price axis = vertical price scale (like TradingView)
+        var tab = _chartTabs.ActiveTab;
         if (_layout.GetPriceAxisRect().Contains(_mousePos.X, _mousePos.Y))
         {
-            _autoScaleY = false;
+            tab.AutoScaleY = false;
             float factor = arg2.Y > 0 ? 0.9f : 1.1f;
-            float mid = (_viewMinY + _viewMaxY) / 2.0f;
-            float range = (_viewMaxY - _viewMinY) * factor;
+            float mid = (tab.ViewMinY + tab.ViewMaxY) / 2.0f;
+            float range = (tab.ViewMaxY - tab.ViewMinY) * factor;
             if (range < 0.00001f) range = 0.00001f;
-            _viewMinY = mid - range / 2.0f;
-            _viewMaxY = mid + range / 2.0f;
+            tab.ViewMinY = mid - range / 2.0f;
+            tab.ViewMaxY = mid + range / 2.0f;
             return;
         }
 
-        if (arg2.Y > 0) _zoom *= 1.1f;
-        else _zoom *= 0.9f;
-        _zoom = Math.Clamp(_zoom, 0.05f, 50.0f);
+        if (arg2.Y > 0) tab.Zoom *= 1.1f;
+        else tab.Zoom *= 0.9f;
+        tab.Zoom = Math.Clamp(tab.Zoom, 0.05f, 50.0f);
     }
 
     private static void OnMouseDown(IMouse arg1, MouseButton arg2) 
@@ -498,7 +488,7 @@ public static partial class Program
                             var selected = _searchModal.GetSelectedSymbol();
                             if (!string.IsNullOrEmpty(selected))
                             {
-                                SwitchContext(selected, _currentTimeframe);
+                                SwitchContext(selected, _chartTabs.ActiveTab.Timeframe);
                                 _searchModal.IsVisible = false;
                                 _searchModal.Clear();
                             }
@@ -581,11 +571,15 @@ public static partial class Program
                 }
             }
 
+            // Chart tab bar click (before other chart interactions)
+            if (_layout.HandleChartTabClick(_mousePos.X, _mousePos.Y, _chartTabs, () => SyncUiWithActiveTab()))
+                return;
+
             // Check for left toolbar (drawing tools) click
             var clickedTool = _layout.HandleToolbarClick(_mousePos.X, _mousePos.Y);
             if (clickedTool.HasValue)
             {
-                _drawingState.ActiveTool = clickedTool.Value;
+                _chartTabs.ActiveTab.DrawingState.ActiveTool = clickedTool.Value;
                 return;
             }
 
@@ -593,11 +587,11 @@ public static partial class Program
             if (_layout.GetPriceAxisRect().Contains(_mousePos.X, _mousePos.Y))
             {
                 _isResizingPrice = true;
-                _autoScaleY = false;
+                _chartTabs.ActiveTab.AutoScaleY = false;
                 return;
             }
 
-            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _drawingState.ActiveTool != Omnijure.Visual.Drawing.DrawingTool.None)
+            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _chartTabs.ActiveTab.DrawingState.ActiveTool != Omnijure.Visual.Drawing.DrawingTool.None)
             {
                 HandleDrawingToolClick();
                 return;
@@ -614,17 +608,18 @@ public static partial class Program
         }
         else if (arg2 == MouseButton.Right)
         {
+            var activeTab = _chartTabs.ActiveTab;
             // Cancel current drawing if any
-            if (_drawingState.CurrentDrawing != null)
+            if (activeTab.DrawingState.CurrentDrawing != null)
             {
-                _drawingState.CurrentDrawing = null;
-                _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
+                activeTab.DrawingState.CurrentDrawing = null;
+                activeTab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
             }
             else
             {
-                _autoScaleY = true;
-                _zoom = 1.0f;
-                _scrollOffset = 0;
+                activeTab.AutoScaleY = true;
+                activeTab.Zoom = 1.0f;
+                activeTab.ScrollOffset = 0;
             }
             foreach(var dd in _uiDropdowns) { dd.IsOpen = false; dd.SearchQuery = ""; dd.ScrollOffset = 0; }
         }
@@ -681,17 +676,18 @@ public static partial class Program
         // Chart price axis drag has highest priority (already committed)
         if (_isResizingPrice)
         {
+            var t = _chartTabs.ActiveTab;
             float sensitivity = 0.005f;
             float factor = 1.0f + (deltaY * sensitivity);
 
-            float mid = (_viewMinY + _viewMaxY) / 2.0f;
-            float range = (_viewMaxY - _viewMinY);
+            float mid = (t.ViewMinY + t.ViewMaxY) / 2.0f;
+            float range = (t.ViewMaxY - t.ViewMinY);
             float newRange = range * factor;
 
             if (newRange < 0.00001f) newRange = 0.00001f;
 
-            _viewMinY = mid - newRange / 2.0f;
-            _viewMaxY = mid + newRange / 2.0f;
+            t.ViewMinY = mid - newRange / 2.0f;
+            t.ViewMaxY = mid + newRange / 2.0f;
             _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
             return;
         }
@@ -699,21 +695,22 @@ public static partial class Program
         // Chart pan/drag has priority over panel system
         if (_isDragging)
         {
+            var t = _chartTabs.ActiveTab;
             // Horizontal Pan (TradingView-style: allow free scrolling into future)
-            _scrollOffset += (int)(deltaX * 0.1f * (_zoom < 1 ? 1 : 1/_zoom));
+            t.ScrollOffset += (int)(deltaX * 0.1f * (t.Zoom < 1 ? 1 : 1/t.Zoom));
 
             // Vertical Pan
             if (System.Math.Abs(deltaY) > 0.5f)
             {
-                _autoScaleY = false;
-                float range = _viewMaxY - _viewMinY;
+                t.AutoScaleY = false;
+                float range = t.ViewMaxY - t.ViewMinY;
                 float pxHeight = _window.Size.Y;
                 if (pxHeight > 0)
                 {
                     float pricePerPx = range / pxHeight;
                     float priceDelta = deltaY * pricePerPx;
-                    _viewMinY += priceDelta;
-                    _viewMaxY += priceDelta;
+                    t.ViewMinY += priceDelta;
+                    t.ViewMaxY += priceDelta;
                 }
             }
             _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
@@ -737,7 +734,8 @@ public static partial class Program
              return;
         }
 
-        if (_drawingState.CurrentDrawing != null && _layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
+        var drawTab = _chartTabs.ActiveTab;
+        if (drawTab.DrawingState.CurrentDrawing != null && _layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
         {
             // Update current drawing (e.g., trend line endpoint) as mouse moves
             float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
@@ -752,18 +750,18 @@ public static partial class Program
             if (chartLocalX >= 0 && chartLocalX <= chartW && chartLocalY >= 0 && chartLocalY <= mainChartH)
             {
                 float baseCandleWidth = 8.0f;
-                float candleWidth = baseCandleWidth * _zoom;
+                float candleWidth = baseCandleWidth * drawTab.Zoom;
                 if (candleWidth < 1.0f) candleWidth = 1.0f;
                 int visibleCandles = (int)System.Math.Ceiling(chartW / candleWidth);
                 if (visibleCandles < 2) visibleCandles = 2;
 
                 int screenIndex = (int)((visibleCandles - 1) - (chartLocalX - candleWidth / 2) / candleWidth);
-                int candleIndex = screenIndex + _scrollOffset;
+                int candleIndex = screenIndex + drawTab.ScrollOffset;
 
                 float normalized = (mainChartH - chartLocalY) / mainChartH;
-                float price = _viewMinY + (normalized * (_viewMaxY - _viewMinY));
+                float price = drawTab.ViewMinY + (normalized * (drawTab.ViewMaxY - drawTab.ViewMinY));
 
-                if (_drawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
+                if (drawTab.DrawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
                 {
                     trendLine.End = (candleIndex, price);
                 }
@@ -777,6 +775,8 @@ public static partial class Program
 
     private static void HandleDrawingToolClick()
     {
+        var tab = _chartTabs.ActiveTab;
+
         // Convert screen coordinates to chart-local coordinates
         float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
         float chartLocalY = _mousePos.Y - _layout.ChartRect.Top;
@@ -794,57 +794,52 @@ public static partial class Program
 
         // Calculate candle width and visible candles (matching ChartRenderer logic)
         float baseCandleWidth = 8.0f;
-        float candleWidth = baseCandleWidth * _zoom;
+        float candleWidth = baseCandleWidth * tab.Zoom;
         if (candleWidth < 1.0f) candleWidth = 1.0f;
         int visibleCandles = (int)System.Math.Ceiling(chartW / candleWidth);
         if (visibleCandles < 2) visibleCandles = 2;
 
         // Convert screen X to candle index
         int screenIndex = (int)((visibleCandles - 1) - (chartLocalX - candleWidth / 2) / candleWidth);
-        int candleIndex = screenIndex + _scrollOffset;
+        int candleIndex = screenIndex + tab.ScrollOffset;
 
         // Convert screen Y to price
         float normalized = (mainChartH - chartLocalY) / mainChartH;
-        float price = _viewMinY + (normalized * (_viewMaxY - _viewMinY));
+        float price = tab.ViewMinY + (normalized * (tab.ViewMaxY - tab.ViewMinY));
 
         // Handle different drawing tools
-        switch (_drawingState.ActiveTool)
+        switch (tab.DrawingState.ActiveTool)
         {
             case Omnijure.Visual.Drawing.DrawingTool.HorizontalLine:
-                // Single click creates horizontal line
                 var hLine = new Omnijure.Visual.Drawing.HorizontalLineObject(price)
                 {
                     Label = null
                 };
-                _drawingState.Objects.Add(hLine);
-                _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None; // Return to cursor
+                tab.DrawingState.Objects.Add(hLine);
+                tab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
                 break;
 
             case Omnijure.Visual.Drawing.DrawingTool.TrendLine:
-                // Two-click process: start and end
-                if (_drawingState.CurrentDrawing == null)
+                if (tab.DrawingState.CurrentDrawing == null)
                 {
-                    // First click - create new trend line
                     var tLine = new Omnijure.Visual.Drawing.TrendLineObject
                     {
                         Start = (candleIndex, price),
-                        End = (candleIndex, price) // Will be updated on second click
+                        End = (candleIndex, price)
                     };
-                    _drawingState.CurrentDrawing = tLine;
+                    tab.DrawingState.CurrentDrawing = tLine;
                 }
-                else if (_drawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
+                else if (tab.DrawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
                 {
-                    // Second click - finalize trend line
                     trendLine.End = (candleIndex, price);
-                    _drawingState.Objects.Add(trendLine);
-                    _drawingState.CurrentDrawing = null;
-                    _drawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None; // Return to cursor
+                    tab.DrawingState.Objects.Add(trendLine);
+                    tab.DrawingState.CurrentDrawing = null;
+                    tab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
                 }
                 break;
 
             case Omnijure.Visual.Drawing.DrawingTool.None:
             default:
-                // No active tool - could implement selection here
                 break;
         }
     }
@@ -858,14 +853,17 @@ public static partial class Program
             return;
         }
 
+        // Active chart tab
+        var activeTab = _chartTabs.ActiveTab;
+
         // Skia Render
         float currentPrice = 0;
-        if (_buffer.Count > 0) currentPrice = _buffer[0].Close;
+        if (activeTab.Buffer.Count > 0) currentPrice = activeTab.Buffer[0].Close;
 
         // 1. THE METAL: Calculate Indicators
-        float rsi = Omnijure.Core.Math.TechnicalAnalysis.CalculateRSI(_buffer, 14);
-        float rvol = Omnijure.Core.Math.TechnicalAnalysis.CalculateRVOL(_buffer, 20);
-        float sma = Omnijure.Core.Math.TechnicalAnalysis.CalculateSMA(_buffer, 50);
+        float rsi = Omnijure.Core.Math.TechnicalAnalysis.CalculateRSI(activeTab.Buffer, 14);
+        float rvol = Omnijure.Core.Math.TechnicalAnalysis.CalculateRVOL(activeTab.Buffer, 20);
+        float sma = Omnijure.Core.Math.TechnicalAnalysis.CalculateSMA(activeTab.Buffer, 50);
 
         // 2. THE MIND: Execute Strategy
         var signals = new System.Collections.Generic.Dictionary<string, float>
@@ -882,61 +880,57 @@ public static partial class Program
 
         // 3. LAYOUT & VIEWPORT
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
-        _layout.UpdateChartTitle(_currentSymbol, _currentTimeframe, currentPrice);
-        
+        _layout.UpdateChartTitle(activeTab.Symbol, activeTab.Timeframe, currentPrice);
+
         // Calculate visible candles based on actual chart content width
         // ChartRect = panel Bounds; content = Bounds - 16px padding - 36px toolbar - 60px price axis
         float chartWidth = _layout.ChartRect.Width - 16 - 36 - 60;
         float baseCandleWidth = 8.0f;
-        float candleWidth = baseCandleWidth * _zoom;
+        float candleWidth = baseCandleWidth * activeTab.Zoom;
         if (candleWidth < 1.0f) candleWidth = 1.0f;
         int visibleCandles = (int)Math.Ceiling(chartWidth / candleWidth);
-        if (visibleCandles < 2) visibleCandles = 2; 
+        if (visibleCandles < 2) visibleCandles = 2;
 
         // Limit scrolling past historical data
-        // Clamp so the most recent candle is always visible at the right edge
-        int maxScroll = Math.Max(0, _buffer.Count - visibleCandles);
-        if (_scrollOffset > maxScroll)
-            _scrollOffset = maxScroll;
+        int maxScroll = Math.Max(0, activeTab.Buffer.Count - visibleCandles);
+        if (activeTab.ScrollOffset > maxScroll)
+            activeTab.ScrollOffset = maxScroll;
 
         // TradingView-style: Allow unlimited scrolling into future (up to 10 screens worth)
         int minScroll = -(visibleCandles * 10);
-        if (_scrollOffset < minScroll) _scrollOffset = minScroll;
+        if (activeTab.ScrollOffset < minScroll) activeTab.ScrollOffset = minScroll;
 
         // Calculate Auto-Min/Max
         float calcMax = float.MinValue;
         float calcMin = float.MaxValue;
-        
-        if (_buffer.Count > 0)
+
+        if (activeTab.Buffer.Count > 0)
         {
             for (int i = 0; i < visibleCandles; i++)
             {
-                int idx = i + _scrollOffset;
+                int idx = i + activeTab.ScrollOffset;
                 if (idx < 0) continue; // Future
-                if (idx >= _buffer.Count) break;
-                
-                ref var c = ref _buffer[idx];
+                if (idx >= activeTab.Buffer.Count) break;
+
+                ref var c = ref activeTab.Buffer[idx];
                 if (c.High > calcMax) calcMax = c.High;
                 if (c.Low < calcMin) calcMin = c.Low;
             }
         } else {
             calcMax = 100; calcMin = 0;
         }
-        
+
         if (calcMax <= calcMin) { calcMax = calcMin + 1; }
 
         // Apply Viewport Logic
-        if (_autoScaleY)
+        if (activeTab.AutoScaleY)
         {
-            _viewMinY = calcMin;
-            _viewMaxY = calcMax;
+            activeTab.ViewMinY = calcMin;
+            activeTab.ViewMaxY = calcMax;
         }
 
-        // Future Scrolling: Allow going into negative index on the left (which means future on the right)
-        // ScrollOffset=0 is Latest Candle at Right Edge.
-        
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, _buffer, decision, _scrollOffset, _zoom, _currentSymbol, _currentTimeframe, _chartType, _uiButtons, _viewMinY, _viewMaxY, _mousePos, _orderBook, _trades, _drawingState, _window.Size.X, _window.Size.Y);
+        _layout.Render(_surface.Canvas, _renderer, activeTab.Buffer, decision, activeTab.ScrollOffset, activeTab.Zoom, activeTab.Symbol, activeTab.Timeframe, activeTab.ChartType, _uiButtons, activeTab.ViewMinY, activeTab.ViewMaxY, _mousePos, activeTab.OrderBook, activeTab.Trades, activeTab.DrawingState, _window.Size.X, _window.Size.Y);
         
         // Render Toolbar (Top)
         _toolbar.UpdateWindowSize(_window.Size.X, _window.Size.Y);
@@ -1007,13 +1001,19 @@ public static partial class Program
             _settings.Current.Layout.WindowHeight = _window.Size.Y;
             _settings.Current.Layout.WindowX = _window.Position.X;
             _settings.Current.Layout.WindowY = _window.Position.Y;
-            _settings.Current.Chart.DefaultSymbol = _currentSymbol;
-            _settings.Current.Chart.DefaultTimeframe = _currentTimeframe;
-            _settings.Current.Chart.DefaultChartType = _chartType.ToString();
-            _settings.Current.Chart.DefaultZoom = _zoom;
+
+            // Save chart tabs
+            var activeTab = _chartTabs.ActiveTab;
+            _settings.Current.Chart.DefaultSymbol = activeTab.Symbol;
+            _settings.Current.Chart.DefaultTimeframe = activeTab.Timeframe;
+            _settings.Current.Chart.DefaultChartType = activeTab.ChartType.ToString();
+            _settings.Current.Chart.DefaultZoom = activeTab.Zoom;
+            _settings.Current.Chart.Tabs = _chartTabs.ExportTabStates();
+            _settings.Current.Chart.ActiveTabIndex = _chartTabs.ActiveIndex;
             _settings.Save();
         }
 
+        _chartTabs?.DisconnectAll();
         _surface?.Dispose();
         _grContext?.Dispose();
     }

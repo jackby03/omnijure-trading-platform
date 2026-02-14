@@ -31,6 +31,16 @@ public class ChartSettings
     public float DefaultZoom { get; set; } = 1.0f;
     public bool ShowVolume { get; set; } = true;
     public bool ShowGrid { get; set; } = true;
+    public List<ChartTabSaved> Tabs { get; set; } = new();
+    public int ActiveTabIndex { get; set; } = 0;
+}
+
+public class ChartTabSaved
+{
+    public string Symbol { get; set; } = "BTCUSDT";
+    public string Timeframe { get; set; } = "1m";
+    public string ChartType { get; set; } = "Candles";
+    public float Zoom { get; set; } = 1.0f;
 }
 
 public class LayoutSettings

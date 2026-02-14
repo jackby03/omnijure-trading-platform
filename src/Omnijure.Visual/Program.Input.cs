@@ -111,7 +111,7 @@ public static partial class Program
                     var selected = _searchModal.GetSelectedSymbol();
                     if (!string.IsNullOrEmpty(selected))
                     {
-                        SwitchContext(selected, _currentTimeframe);
+                        SwitchContext(selected, _chartTabs.ActiveTab.Timeframe);
                         _searchModal.IsVisible = false;
                         _searchModal.Clear();
                     }
@@ -139,7 +139,7 @@ public static partial class Program
                 var filtered = _assetDropdown.GetFilteredItems();
                 if (filtered.Count > 0)
                 {
-                    SwitchContext(filtered[0], _currentTimeframe);
+                    SwitchContext(filtered[0], _chartTabs.ActiveTab.Timeframe);
                     _searchBox.Clear();
                     _searchBox.IsFocused = false;
                     _assetDropdown.SearchQuery = "";
@@ -159,20 +159,21 @@ public static partial class Program
         }
 
         // Global shortcuts
-        if (arg2 == Key.Space) { _scrollOffset = 0; _zoom = 1.0f; }
-        if (arg2 == Key.Delete && _drawingState.Objects.Count > 0)
-            _drawingState.Objects.RemoveAt(_drawingState.Objects.Count - 1);
+        var activeTab = _chartTabs.ActiveTab;
+        if (arg2 == Key.Space) { activeTab.ScrollOffset = 0; activeTab.Zoom = 1.0f; }
+        if (arg2 == Key.Delete && activeTab.DrawingState.Objects.Count > 0)
+            activeTab.DrawingState.Objects.RemoveAt(activeTab.DrawingState.Objects.Count - 1);
 
         // Timeframe shortcuts
-        if (arg2 == Key.Number1) SwitchContext(_currentSymbol, "1m");
-        if (arg2 == Key.Number2) SwitchContext(_currentSymbol, "5m");
-        if (arg2 == Key.Number3) SwitchContext(_currentSymbol, "15m");
-        
+        if (arg2 == Key.Number1) SwitchContext(activeTab.Symbol, "1m");
+        if (arg2 == Key.Number2) SwitchContext(activeTab.Symbol, "5m");
+        if (arg2 == Key.Number3) SwitchContext(activeTab.Symbol, "15m");
+
         // Asset shortcuts
-        if (arg2 == Key.F1) SwitchContext("BTCUSDT", _currentTimeframe);
-        if (arg2 == Key.F2) SwitchContext("ETHUSDT", _currentTimeframe);
-        if (arg2 == Key.F3) SwitchContext("SOLUSDT", _currentTimeframe);
-        if (arg2 == Key.F4) SwitchContext("XRPUSDT", _currentTimeframe);
+        if (arg2 == Key.F1) SwitchContext("BTCUSDT", activeTab.Timeframe);
+        if (arg2 == Key.F2) SwitchContext("ETHUSDT", activeTab.Timeframe);
+        if (arg2 == Key.F3) SwitchContext("SOLUSDT", activeTab.Timeframe);
+        if (arg2 == Key.F4) SwitchContext("XRPUSDT", activeTab.Timeframe);
     }
     
     private static void OnResize(Vector2D<int> size)
