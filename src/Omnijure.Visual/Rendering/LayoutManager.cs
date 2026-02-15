@@ -1,8 +1,10 @@
 using Omnijure.Core.Settings;
+using Omnijure.Core.Scripting;
 using Omnijure.Visual;
 using SkiaSharp;
 using Silk.NET.Maths;
 using Omnijure.Core.DataStructures;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Omnijure.Visual.Rendering;
@@ -136,7 +138,7 @@ public class LayoutManager
         ChartType chartType, System.Collections.Generic.List<UiButton> buttons,
         float minPrice, float maxPrice, Vector2D<float> mousePos, OrderBook orderBook,
         RingBuffer<MarketTrade> trades, Omnijure.Visual.Drawing.DrawingToolState? drawingState,
-        int screenWidth, int screenHeight)
+        int screenWidth, int screenHeight, List<ScriptOutput>? scriptOutputs = null)
     {
         // CAPA 0: Workspace background
         var wsBgPaint = PaintPool.Instance.Rent();
@@ -197,7 +199,7 @@ public class LayoutManager
                 (int)(chartArea.Width - LeftToolbarRenderer.ToolbarWidth),
                 (int)chartArea.Height,
                 buffer, decision, scrollOffset, zoom, symbol, interval, chartType, buttons,
-                minPrice, maxPrice, chartMousePos, drawingState);
+                minPrice, maxPrice, chartMousePos, drawingState, scriptOutputs);
 
             canvas.Restore();
             canvas.Restore();
@@ -231,6 +233,8 @@ public class LayoutManager
             PaintPool.Instance.Return(windowBorderPaint);
         }
     }
+
+    public void SetActiveScriptManager(Omnijure.Core.Scripting.ScriptManager? scripts) => _panelContent.SetActiveScriptManager(scripts);
 
     public void UpdateFps(int fps) => _statusBar.UpdateFps(fps);
 

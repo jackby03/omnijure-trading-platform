@@ -879,6 +879,7 @@ public static partial class Program
 
 
         // 3. LAYOUT & VIEWPORT
+        _layout.SetActiveScriptManager(activeTab.Scripts);
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
         _layout.UpdateChartTitle(activeTab.Symbol, activeTab.Timeframe, currentPrice);
 
@@ -929,8 +930,15 @@ public static partial class Program
             activeTab.ViewMaxY = calcMax;
         }
 
+        // Execute SharpScripts
+        System.Collections.Generic.List<Omnijure.Core.Scripting.ScriptOutput>? scriptOutputs = null;
+        if (activeTab.Scripts.Count > 0 && activeTab.Buffer.Count > 0)
+        {
+            scriptOutputs = activeTab.Scripts.ExecuteAll(activeTab.Buffer);
+        }
+
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, activeTab.Buffer, decision, activeTab.ScrollOffset, activeTab.Zoom, activeTab.Symbol, activeTab.Timeframe, activeTab.ChartType, _uiButtons, activeTab.ViewMinY, activeTab.ViewMaxY, _mousePos, activeTab.OrderBook, activeTab.Trades, activeTab.DrawingState, _window.Size.X, _window.Size.Y);
+        _layout.Render(_surface.Canvas, _renderer, activeTab.Buffer, decision, activeTab.ScrollOffset, activeTab.Zoom, activeTab.Symbol, activeTab.Timeframe, activeTab.ChartType, _uiButtons, activeTab.ViewMinY, activeTab.ViewMaxY, _mousePos, activeTab.OrderBook, activeTab.Trades, activeTab.DrawingState, _window.Size.X, _window.Size.Y, scriptOutputs);
         
         // Render Toolbar (Top)
         _toolbar.UpdateWindowSize(_window.Size.X, _window.Size.Y);

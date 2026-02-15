@@ -1,6 +1,9 @@
 using SkiaSharp;
 using Omnijure.Core.DataStructures;
+using Omnijure.Core.Scripting;
+using Omnijure.Visual.Chart;
 using Silk.NET.Maths;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace Omnijure.Visual.Rendering;
@@ -13,6 +16,7 @@ public class ChartRenderer
     private readonly SKPaint _bullishPaint;
     private readonly SKPaint _bearishPaint;
     private readonly SKPaint _gridPaint;
+    private readonly ScriptOverlayRenderer _scriptOverlay = new();
 
     // Performance: Allocate paints once
     public ChartRenderer()
@@ -32,7 +36,7 @@ public class ChartRenderer
 
     // Render method...
 
-    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice, Vector2D<float> mousePos, Omnijure.Visual.Drawing.DrawingToolState? drawingState = null)
+    public void Render(SKCanvas canvas, int width, int height, RingBuffer<Candle> buffer, string decision, int scrollOffset, float zoom, string symbol, string interval, ChartType chartType, System.Collections.Generic.List<UiButton> buttons, float minPrice, float maxPrice, Vector2D<float> mousePos, Omnijure.Visual.Drawing.DrawingToolState? drawingState = null, List<ScriptOutput>? scriptOutputs = null)
     {
         // 1. Layout Margins (TradingView style with volume panel)
         const int RightAxisWidth = 60;
@@ -75,11 +79,14 @@ public class ChartRenderer
             case ChartType.Area: DrawAreaChart(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice); break;
         }
 
-        // Draw indicators (SMA lines like TradingView)
-        DrawIndicators(canvas, buffer, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice);
+        // Draw script overlays (replaces hardcoded indicators)
+        if (scriptOutputs != null && scriptOutputs.Count > 0)
+        {
+            _scriptOverlay.RenderOverlays(canvas, scriptOutputs, visibleCandles, scrollOffset, candleWidth, mainChartH, minPrice, maxPrice);
+        }
 
-        // Draw chart legend (TradingView-style indicator values)
-        DrawChartLegend(canvas, buffer, symbol, interval, visibleCandles, scrollOffset);
+        // Draw chart legend (dynamic from script outputs)
+        DrawChartLegend(canvas, buffer, symbol, interval, visibleCandles, scrollOffset, scriptOutputs);
 
         // Draw drawing objects (trend lines, horizontal lines, etc.)
         if (drawingState != null)
@@ -345,55 +352,7 @@ public class ChartRenderer
         }
     }
 
-    private void DrawIndicators(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max)
-    {
-        if (buffer.Count < 50) return; // Need enough data for indicators
-
-        // SMA 20 (Yellow line)
-        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 20, ThemeManager.Indicator20);
-
-        // SMA 50 (Cyan line)
-        DrawSMA(canvas, buffer, visible, offset, candleWidth, height, min, max, 50, ThemeManager.Indicator50);
-    }
-
-    private void DrawSMA(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, int height, float min, float max, int period, SKColor color)
-    {
-        using var smaPaint = new SKPaint { Color = color, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, IsAntialias = true };
-        using var path = new SKPath();
-
-        bool started = false;
-
-        for (int i = 0; i < visible; i++)
-        {
-            int idx = i + offset;
-            if (idx < 0 || idx >= buffer.Count) continue;
-
-            // Calculate SMA
-            if (idx + period > buffer.Count) continue; // Not enough data
-
-            float sum = 0;
-            for (int j = 0; j < period; j++)
-            {
-                sum += buffer[idx + j].Close;
-            }
-            float sma = sum / period;
-
-            float x = (visible - 1 - i) * candleWidth + (candleWidth / 2);
-            float y = MapPriceToY(sma, min, max, height);
-
-            if (!started)
-            {
-                path.MoveTo(x, y);
-                started = true;
-            }
-            else
-            {
-                path.LineTo(x, y);
-            }
-        }
-
-        canvas.DrawPath(path, smaPaint);
-    }
+    // DrawIndicators/DrawSMA removed — replaced by ScriptOverlayRenderer
 
     private void DrawVolumePanel(SKCanvas canvas, RingBuffer<Candle> buffer, int visible, int offset, float candleWidth, float yOffset, int volumeHeight, int chartW)
     {
@@ -447,13 +406,24 @@ public class ChartRenderer
         canvas.DrawText("Volume", 5, yOffset + 15, font, textPaint);
     }
 
-    private void DrawChartLegend(SKCanvas canvas, RingBuffer<Candle> buffer, string symbol, string interval, int visibleCandles, int scrollOffset)
+    private void DrawChartLegend(SKCanvas canvas, RingBuffer<Candle> buffer, string symbol, string interval, int visibleCandles, int scrollOffset, List<ScriptOutput>? scriptOutputs = null)
     {
         if (buffer.Count == 0) return;
 
         float x = 10;
         float y = 10;
-        float lineHeight = 20;
+        float lineHeight = 18;
+
+        // Count dynamic plot entries for legend sizing
+        int plotCount = 0;
+        if (scriptOutputs != null)
+        {
+            foreach (var so in scriptOutputs)
+            {
+                if (so.Error == null && so.IsOverlay)
+                    plotCount += so.Plots.Count;
+            }
+        }
 
         // Semi-transparent background
         using var bgPaint = new SKPaint
@@ -462,9 +432,8 @@ public class ChartRenderer
             Style = SKPaintStyle.Fill
         };
 
-        // Calculate legend size
         float legendWidth = 280;
-        float legendHeight = 90;
+        float legendHeight = 50 + plotCount * lineHeight;
         canvas.DrawRoundRect(new SKRect(x, y, x + legendWidth, y + legendHeight),
             ThemeManager.BorderRadiusSmall, ThemeManager.BorderRadiusSmall, bgPaint);
 
@@ -513,45 +482,43 @@ public class ChartRenderer
 
         y += lineHeight;
 
-        // SMA 20
-        if (buffer.Count >= 20)
+        // Dynamic indicator values from scripts
+        if (scriptOutputs != null)
         {
-            float sma20 = CalculateSMAValue(buffer, 20, scrollOffset);
-            using var sma20LinePaint = new SKPaint { Color = ThemeManager.Indicator20, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, StrokeCap = SKStrokeCap.Round };
-            canvas.DrawLine(x, y - 4, x + 14, y - 4, sma20LinePaint);
-            using var sma20Paint = new SKPaint { Color = ThemeManager.Indicator20, IsAntialias = true };
-            canvas.DrawText($"SMA(20): {sma20:F2}", x + 18, y, font, sma20Paint);
-            y += lineHeight;
-        }
+            foreach (var so in scriptOutputs)
+            {
+                if (so.Error != null || !so.IsOverlay) continue;
 
-        // SMA 50
-        if (buffer.Count >= 50)
-        {
-            float sma50 = CalculateSMAValue(buffer, 50, scrollOffset);
-            using var sma50LinePaint = new SKPaint { Color = ThemeManager.Indicator50, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, StrokeCap = SKStrokeCap.Round };
-            canvas.DrawLine(x, y - 4, x + 14, y - 4, sma50LinePaint);
-            using var sma50Paint = new SKPaint { Color = ThemeManager.Indicator50, IsAntialias = true };
-            canvas.DrawText($"SMA(50): {sma50:F2}", x + 18, y, font, sma50Paint);
-            y += lineHeight;
+                foreach (var plot in so.Plots)
+                {
+                    if (plot.Values == null || plot.Values.Length == 0) continue;
+
+                    // Get current visible value
+                    int idx = scrollOffset;
+                    if (idx < 0) idx = 0;
+                    float val = (idx < plot.Values.Length) ? plot.Values[idx] : float.NaN;
+                    if (float.IsNaN(val)) continue;
+
+                    // Color swatch line
+                    byte a = (byte)((plot.Color >> 24) & 0xFF);
+                    byte r = (byte)((plot.Color >> 16) & 0xFF);
+                    byte g = (byte)((plot.Color >> 8) & 0xFF);
+                    byte b = (byte)(plot.Color & 0xFF);
+                    var plotColor = new SKColor(r, g, b, a);
+
+                    using var linePaint = new SKPaint { Color = plotColor, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, StrokeCap = SKStrokeCap.Round };
+                    canvas.DrawLine(x, y - 4, x + 14, y - 4, linePaint);
+
+                    using var textPaint = new SKPaint { Color = plotColor, IsAntialias = true };
+                    canvas.DrawText($"{plot.Title}: {val:F2}", x + 18, y, font, textPaint);
+                    y += lineHeight;
+                }
+            }
         }
 
         // Interval info
         using var mutedPaint = new SKPaint { Color = ThemeManager.TextMuted, IsAntialias = true };
-        canvas.DrawText($"{interval} • {visibleCandles} candles", x, y, font, mutedPaint);
-    }
-
-    private float CalculateSMAValue(RingBuffer<Candle> buffer, int period, int scrollOffset)
-    {
-        // Calculate SMA for the most recent visible candle
-        int startIdx = scrollOffset;
-        if (startIdx < 0 || startIdx + period > buffer.Count) return 0;
-
-        float sum = 0;
-        for (int i = 0; i < period; i++)
-        {
-            sum += buffer[startIdx + i].Close;
-        }
-        return sum / period;
+        canvas.DrawText($"{interval} \u2022 {visibleCandles} candles", x, y, font, mutedPaint);
     }
 
     private void DrawGrid(SKCanvas canvas, int chartW, int chartH, float minPrice, float maxPrice, int visibleCandles, float candleWidth, string interval, RingBuffer<Candle> buffer, int scrollOffset)

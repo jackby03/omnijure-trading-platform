@@ -1,4 +1,5 @@
 using Omnijure.Core.DataStructures;
+using Omnijure.Core.Scripting;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -22,6 +23,14 @@ public class PanelContentRenderer
     // Cached references for overlay rendering
     private OrderBook _lastOrderBook;
     private RingBuffer<MarketTrade> _lastTrades;
+
+    // Script editor state
+    private ScriptManager? _activeScriptManager;
+    private int _editorActiveScript;
+    private int _editorCursorPos;
+    private int _editorScrollLine;
+
+    public void SetActiveScriptManager(ScriptManager? scripts) => _activeScriptManager = scripts;
 
     // Constants
     private const float AlertsFixedHeaderH = 58;
@@ -82,7 +91,7 @@ public class PanelContentRenderer
                 RenderPortfolioPanel(canvas, contentWidth, contentHeight);
                 break;
             case PanelDefinitions.SCRIPT_EDITOR:
-                RenderPlaceholderPanel(canvas, contentWidth, contentHeight, "Script Editor", "Pine Script \u2022 C# \u2022 Python");
+                RenderScriptEditorPanel(canvas, contentWidth, contentHeight, scrollY);
                 break;
             case PanelDefinitions.ALERTS:
                 RenderAlertsPanel(canvas, contentWidth, contentHeight, scrollY);
@@ -96,7 +105,7 @@ public class PanelContentRenderer
 
         // Draw scrollbar for scrollable panels (after clip restore)
         if (panel.Config.Id is PanelDefinitions.PORTFOLIO or PanelDefinitions.AI_ASSISTANT
-            or PanelDefinitions.ALERTS or PanelDefinitions.LOGS)
+            or PanelDefinitions.ALERTS or PanelDefinitions.LOGS or PanelDefinitions.SCRIPT_EDITOR)
         {
             float totalH = GetPanelContentHeight(panel);
             float scroll = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
@@ -1098,6 +1107,349 @@ public class PanelContentRenderer
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // Script Editor Panel
+    // ═══════════════════════════════════════════════════════════════
+
+    private const float ScriptTabBarH = 26f;
+    private const float ScriptToolbarH = 28f;
+    private const float ScriptErrorBarH = 22f;
+    private const float ScriptLineH = 16f;
+    private const float ScriptGutterW = 36f;
+
+    private void RenderScriptEditorPanel(SKCanvas canvas, float width, float height, float scrollY)
+    {
+        if (_activeScriptManager == null)
+        {
+            RenderPlaceholderPanel(canvas, width, height, "Script Editor", "No active chart tab");
+            return;
+        }
+
+        var scripts = _activeScriptManager;
+        var paint = PaintPool.Instance.Rent();
+        try
+        {
+            paint.IsAntialias = true;
+
+            // Script tab bar
+            RenderScriptTabBar(canvas, paint, width, scripts);
+
+            // Toolbar (Run / Add / Remove)
+            float toolbarY = ScriptTabBarH;
+            RenderScriptToolbar(canvas, paint, width, toolbarY, scripts);
+
+            // Code area
+            float codeY = ScriptTabBarH + ScriptToolbarH;
+            float codeH = height - codeY;
+
+            // Get active script source
+            string source = "";
+            string? error = null;
+            if (scripts.Count > 0 && _editorActiveScript < scripts.Count)
+            {
+                var active = scripts.Scripts[_editorActiveScript];
+                source = active.Source;
+                error = active.LastOutput?.Error;
+            }
+
+            // Error bar (at bottom if error)
+            if (error != null && error != "Disabled")
+            {
+                codeH -= ScriptErrorBarH;
+                RenderScriptErrorBar(canvas, paint, width, codeY + codeH, error);
+            }
+
+            // Render code with line numbers + syntax highlighting
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, codeY, width, codeY + codeH));
+            canvas.Translate(0, codeY);
+            RenderScriptCode(canvas, paint, width, codeH, source, scrollY);
+            canvas.Restore();
+        }
+        finally
+        {
+            PaintPool.Instance.Return(paint);
+        }
+    }
+
+    private void RenderScriptTabBar(SKCanvas canvas, SKPaint paint, float width, ScriptManager scripts)
+    {
+        // Background
+        paint.Color = new SKColor(18, 20, 26);
+        paint.Style = SKPaintStyle.Fill;
+        canvas.DrawRect(0, 0, width, ScriptTabBarH, paint);
+
+        // Bottom border
+        paint.Color = new SKColor(40, 45, 55);
+        paint.Style = SKPaintStyle.Stroke;
+        paint.StrokeWidth = 1;
+        canvas.DrawLine(0, ScriptTabBarH, width, ScriptTabBarH, paint);
+
+        using var tabFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 10);
+        float tabX = 4;
+
+        for (int i = 0; i < scripts.Count; i++)
+        {
+            var script = scripts.Scripts[i];
+            bool isActive = i == _editorActiveScript;
+            string label = script.Name;
+            float labelW = tabFont.MeasureText(label);
+            float tabW = labelW + 16;
+
+            // Tab background
+            paint.Style = SKPaintStyle.Fill;
+            if (isActive)
+            {
+                paint.Color = new SKColor(30, 34, 42);
+                var tabRect = new SKRect(tabX, 2, tabX + tabW, ScriptTabBarH - 2);
+                canvas.DrawRoundRect(new SKRoundRect(tabRect, 3, 3), paint);
+            }
+
+            // Enabled/disabled indicator dot
+            paint.Color = script.IsEnabled ? new SKColor(46, 204, 113) : new SKColor(100, 105, 115);
+            canvas.DrawCircle(tabX + 7, ScriptTabBarH / 2, 3, paint);
+
+            // Label
+            paint.Color = isActive ? new SKColor(200, 205, 215) : new SKColor(100, 105, 115);
+            canvas.DrawText(label, tabX + 14, ScriptTabBarH / 2 + 4, tabFont, paint);
+
+            tabX += tabW + 4;
+        }
+    }
+
+    private void RenderScriptToolbar(SKCanvas canvas, SKPaint paint, float width, float y, ScriptManager scripts)
+    {
+        // Background
+        paint.Style = SKPaintStyle.Fill;
+        paint.Color = new SKColor(22, 25, 32);
+        canvas.DrawRect(0, y, width, ScriptToolbarH, paint);
+
+        // Bottom border
+        paint.Style = SKPaintStyle.Stroke;
+        paint.StrokeWidth = 1;
+        paint.Color = new SKColor(35, 40, 50);
+        canvas.DrawLine(0, y + ScriptToolbarH, width, y + ScriptToolbarH, paint);
+
+        using var btnFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 10);
+        float btnX = 6;
+        float btnY = y + 4;
+        float btnH = ScriptToolbarH - 8;
+
+        // Toggle button
+        bool enabled = scripts.Count > 0 && _editorActiveScript < scripts.Count && scripts.Scripts[_editorActiveScript].IsEnabled;
+        paint.Style = SKPaintStyle.Fill;
+        paint.Color = enabled ? new SKColor(30, 80, 50) : new SKColor(50, 35, 35);
+        float toggleW = btnFont.MeasureText(enabled ? "ON" : "OFF") + 14;
+        canvas.DrawRoundRect(new SKRoundRect(new SKRect(btnX, btnY, btnX + toggleW, btnY + btnH), 3, 3), paint);
+        paint.Color = enabled ? new SKColor(46, 204, 113) : new SKColor(200, 80, 80);
+        canvas.DrawText(enabled ? "ON" : "OFF", btnX + 7, btnY + btnH - 5, btnFont, paint);
+        btnX += toggleW + 6;
+
+        // Script name label
+        if (scripts.Count > 0 && _editorActiveScript < scripts.Count)
+        {
+            paint.Color = new SKColor(140, 145, 155);
+            string title = scripts.Scripts[_editorActiveScript].Name;
+            canvas.DrawText(title, btnX, btnY + btnH - 5, btnFont, paint);
+        }
+
+        // Script count (right-aligned)
+        paint.Color = new SKColor(80, 85, 95);
+        string countStr = $"{scripts.Count} script(s)";
+        float countW = btnFont.MeasureText(countStr);
+        canvas.DrawText(countStr, width - countW - 8, btnY + btnH - 5, btnFont, paint);
+    }
+
+    private void RenderScriptErrorBar(SKCanvas canvas, SKPaint paint, float width, float y, string error)
+    {
+        paint.Style = SKPaintStyle.Fill;
+        paint.Color = new SKColor(60, 25, 25);
+        canvas.DrawRect(0, y, width, ScriptErrorBarH, paint);
+
+        using var errFont = new SKFont(SKTypeface.FromFamilyName("Cascadia Code") ?? SKTypeface.FromFamilyName("Consolas"), 10);
+        paint.Color = new SKColor(239, 83, 80);
+        canvas.DrawText(error, 8, y + ScriptErrorBarH - 6, errFont, paint);
+    }
+
+    private void RenderScriptCode(SKCanvas canvas, SKPaint paint, float width, float height, string source, float scrollY)
+    {
+        // Background
+        paint.Style = SKPaintStyle.Fill;
+        paint.Color = new SKColor(16, 18, 22);
+        canvas.DrawRect(0, 0, width, height, paint);
+
+        if (string.IsNullOrEmpty(source))
+        {
+            paint.Color = new SKColor(80, 85, 95);
+            using var hintFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Italic), 11);
+            canvas.DrawText("Write your SharpScript here...", ScriptGutterW + 8, 24, hintFont, paint);
+            return;
+        }
+
+        // Gutter background
+        paint.Color = new SKColor(20, 22, 28);
+        canvas.DrawRect(0, 0, ScriptGutterW, height, paint);
+
+        // Gutter border
+        paint.Color = new SKColor(35, 40, 50);
+        paint.Style = SKPaintStyle.Stroke;
+        paint.StrokeWidth = 1;
+        canvas.DrawLine(ScriptGutterW, 0, ScriptGutterW, height, paint);
+        paint.Style = SKPaintStyle.Fill;
+
+        var lines = source.Split('\n');
+        using var monoFont = new SKFont(SKTypeface.FromFamilyName("Cascadia Code") ?? SKTypeface.FromFamilyName("Consolas"), 11);
+
+        int visibleLines = (int)(height / ScriptLineH) + 1;
+        int startLine = (int)(scrollY / ScriptLineH);
+        if (startLine < 0) startLine = 0;
+
+        for (int i = 0; i < visibleLines && (startLine + i) < lines.Length; i++)
+        {
+            int lineNum = startLine + i;
+            float y = i * ScriptLineH + ScriptLineH - 3;
+
+            // Line number
+            paint.Color = new SKColor(65, 70, 80);
+            string numStr = (lineNum + 1).ToString();
+            float numW = monoFont.MeasureText(numStr);
+            canvas.DrawText(numStr, ScriptGutterW - numW - 4, y, monoFont, paint);
+
+            // Syntax-highlighted source line
+            DrawHighlightedLine(canvas, paint, monoFont, lines[lineNum], ScriptGutterW + 8, y, width - ScriptGutterW - 8);
+        }
+    }
+
+    private static void DrawHighlightedLine(SKCanvas canvas, SKPaint paint, SKFont font, string line, float x, float y, float maxW)
+    {
+        // Simple token-based syntax highlighting
+        string trimmed = line.TrimStart();
+        float curX = x;
+
+        // Handle leading whitespace
+        float indentW = font.MeasureText(line[..^trimmed.Length]);
+        curX += indentW;
+
+        // Comment line
+        if (trimmed.StartsWith("//"))
+        {
+            paint.Color = new SKColor(90, 95, 105); // gray
+            canvas.DrawText(trimmed, curX, y, font, paint);
+            return;
+        }
+
+        // Token-by-token coloring
+        int pos = 0;
+        while (pos < trimmed.Length)
+        {
+            char c = trimmed[pos];
+
+            // Skip spaces
+            if (c == ' ' || c == '\t')
+            {
+                float spW = font.MeasureText(" ");
+                curX += spW;
+                pos++;
+                continue;
+            }
+
+            // String literal
+            if (c == '"')
+            {
+                int end = trimmed.IndexOf('"', pos + 1);
+                if (end < 0) end = trimmed.Length - 1;
+                string str = trimmed[pos..(end + 1)];
+                paint.Color = new SKColor(152, 195, 121); // green
+                canvas.DrawText(str, curX, y, font, paint);
+                curX += font.MeasureText(str);
+                pos = end + 1;
+                continue;
+            }
+
+            // Color literal
+            if (c == '#')
+            {
+                int end = pos + 1;
+                while (end < trimmed.Length && IsHexChar(trimmed[end])) end++;
+                string col = trimmed[pos..end];
+                paint.Color = new SKColor(209, 154, 102); // orange
+                canvas.DrawText(col, curX, y, font, paint);
+                curX += font.MeasureText(col);
+                pos = end;
+                continue;
+            }
+
+            // Number
+            if (char.IsDigit(c) || (c == '.' && pos + 1 < trimmed.Length && char.IsDigit(trimmed[pos + 1])))
+            {
+                int end = pos;
+                bool hasDot = false;
+                while (end < trimmed.Length && (char.IsDigit(trimmed[end]) || (trimmed[end] == '.' && !hasDot)))
+                {
+                    if (trimmed[end] == '.') hasDot = true;
+                    end++;
+                }
+                string num = trimmed[pos..end];
+                paint.Color = new SKColor(209, 154, 102); // orange
+                canvas.DrawText(num, curX, y, font, paint);
+                curX += font.MeasureText(num);
+                pos = end;
+                continue;
+            }
+
+            // Identifier / keyword
+            if (char.IsLetter(c) || c == '_')
+            {
+                int end = pos;
+                while (end < trimmed.Length && (char.IsLetterOrDigit(trimmed[end]) || trimmed[end] == '_' || trimmed[end] == '.'))
+                    end++;
+                string word = trimmed[pos..end];
+
+                paint.Color = word switch
+                {
+                    // Keywords
+                    "if" or "else" or "and" or "or" or "not" or "true" or "false"
+                        => new SKColor(198, 120, 221), // purple
+                    // Declaration keywords
+                    "indicator" or "strategy"
+                        => new SKColor(86, 182, 194), // cyan
+                    // Built-in functions
+                    "sma" or "ema" or "rsi" or "stdev" or "highest" or "lowest" or
+                    "crossover" or "crossunder" or "plot" or "hline" or "bgcolor" or
+                    "plotshape" or "alertcondition" or "input" or
+                    "strategy.entry" or "strategy.close" or "strategy.long" or "strategy.short" or
+                    "math.abs" or "math.max" or "math.min" or "math.sqrt"
+                        => new SKColor(229, 192, 123), // yellow
+                    // Built-in variables
+                    "close" or "open" or "high" or "low" or "volume" or "bar_index" or "time"
+                        => new SKColor(224, 108, 117), // red
+                    // Named arguments
+                    "color" or "overlay" or "linewidth" or "linestyle" or "location" or "style" or
+                    "dashed" or "dotted" or "solid" or
+                    "abovebar" or "belowbar" or
+                    "triangleup" or "triangledown" or "arrowup" or "arrowdown" or "circle" or "cross" or "diamond"
+                        => new SKColor(86, 182, 194), // cyan
+                    _ => new SKColor(171, 178, 191) // default white-ish
+                };
+
+                canvas.DrawText(word, curX, y, font, paint);
+                curX += font.MeasureText(word);
+                pos = end;
+                continue;
+            }
+
+            // Operators and single chars
+            string ch = c.ToString();
+            paint.Color = new SKColor(140, 145, 160); // light gray
+            canvas.DrawText(ch, curX, y, font, paint);
+            curX += font.MeasureText(ch);
+            pos++;
+        }
+    }
+
+    private static bool IsHexChar(char c) =>
+        char.IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+
+    // ═══════════════════════════════════════════════════════════════
     // Placeholder Panel
     // ═══════════════════════════════════════════════════════════════
 
@@ -1185,6 +1537,23 @@ public class PanelContentRenderer
                 return true;
             }
 
+            if (panel.Config.Id == PanelDefinitions.SCRIPT_EDITOR)
+            {
+                float codeViewH = viewHeight - ScriptTabBarH - ScriptToolbarH;
+                float codeContentH = 0;
+                if (_activeScriptManager != null && _activeScriptManager.Count > 0 && _editorActiveScript < _activeScriptManager.Count)
+                {
+                    var src = _activeScriptManager.Scripts[_editorActiveScript].Source;
+                    int lineCount = string.IsNullOrEmpty(src) ? 0 : src.Split('\n').Length;
+                    codeContentH = lineCount * ScriptLineH;
+                }
+                if (codeContentH <= codeViewH) return true;
+                float scriptMax = codeContentH - codeViewH;
+                float scriptCur = _panelScrollOffsets.GetValueOrDefault(panel.Config.Id, 0);
+                _panelScrollOffsets[panel.Config.Id] = Math.Clamp(scriptCur - deltaY * 20f, 0, scriptMax);
+                return true;
+            }
+
             if (contentHeight <= viewHeight) return true;
 
             float maxScroll = contentHeight - viewHeight;
@@ -1206,8 +1575,18 @@ public class PanelContentRenderer
             PanelDefinitions.AI_ASSISTANT => _aiChatContentHeight,
             PanelDefinitions.ALERTS => AlertsRowCount * AlertsRowH + 8,
             PanelDefinitions.LOGS => ConsoleLineCount * ConsoleLineH + 8,
+            PanelDefinitions.SCRIPT_EDITOR => GetScriptEditorContentHeight(),
             _ => panel.ContentBounds.Height
         };
+    }
+
+    private float GetScriptEditorContentHeight()
+    {
+        if (_activeScriptManager == null || _activeScriptManager.Count == 0 || _editorActiveScript >= _activeScriptManager.Count)
+            return 100;
+        var src = _activeScriptManager.Scripts[_editorActiveScript].Source;
+        int lineCount = string.IsNullOrEmpty(src) ? 1 : src.Split('\n').Length;
+        return lineCount * ScriptLineH + ScriptTabBarH + ScriptToolbarH;
     }
 
     private float GetAiScrollZoneHeight(DockablePanel panel)
