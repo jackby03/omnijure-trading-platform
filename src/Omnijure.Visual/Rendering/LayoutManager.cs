@@ -27,6 +27,7 @@ public class LayoutManager
     private readonly LeftToolbarRenderer _leftToolbar;
     private readonly StatusBarRenderer _statusBar;
     private readonly PanelContentRenderer _panelContent;
+    private readonly SecondaryToolbarRenderer _secondaryToolbar;
 
     // Chart tab bar
     private ChartTabManager _chartTabs;
@@ -34,6 +35,10 @@ public class LayoutManager
     private readonly List<(int tabIndex, SKRect rect, SKRect closeRect)> _chartTabRects = new();
     private SKRect _addTabButtonRect;
     private const float ChartTabBarHeight = 28f;
+
+    // Asset info for secondary toolbar
+    private float _assetPrice;
+    private float _assetChange;
 
     // Legacy properties for backward compatibility
     public bool IsResizingLeft => false;
@@ -46,17 +51,20 @@ public class LayoutManager
         _sidebar = new SidebarRenderer();
         _leftToolbar = new LeftToolbarRenderer();
         _statusBar = new StatusBarRenderer();
+        _secondaryToolbar = new SecondaryToolbarRenderer();
         _panelSystem = new PanelSystem();
         _panelContent = new PanelContentRenderer(_panelSystem, _sidebar);
     }
 
+    public float TotalHeaderHeight => HeaderHeight + SecondaryToolbarRenderer.ToolbarHeight;
+
     public void UpdateLayout(int width, int height)
     {
-        // 0. Header
+        // 0. Header (main + secondary toolbar)
         HeaderRect = new SKRect(0, 0, width, HeaderHeight);
 
-        // 1. Update panel system
-        _panelSystem.Update(width, height, HeaderHeight);
+        // 1. Update panel system (topEdgeY accounts for both toolbars)
+        _panelSystem.Update(width, height, TotalHeaderHeight);
 
         // 2. ChartRect = actual chart panel bounds
         var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
@@ -66,8 +74,8 @@ public class LayoutManager
         }
         else
         {
-            var chartArea = _panelSystem.GetChartArea(width, height, HeaderHeight);
-            ChartRect = new SKRect(chartArea.Left, HeaderHeight, chartArea.Right, chartArea.Bottom);
+            var chartArea = _panelSystem.GetChartArea(width, height, TotalHeaderHeight);
+            ChartRect = new SKRect(chartArea.Left, TotalHeaderHeight, chartArea.Right, chartArea.Bottom);
         }
 
         // 3. Left Toolbar inside chart
@@ -79,6 +87,11 @@ public class LayoutManager
     {
         _panelSystem.OnMouseDown(x, y);
     }
+
+    // Secondary toolbar interaction
+    public void UpdateSecondaryToolbarMouse(float x, float y) => _secondaryToolbar.UpdateMousePos(x, y);
+    public string? HandleSecondaryToolbarClick(float x, float y) => _secondaryToolbar.GetButtonAtPosition(x, y);
+    public bool IsInSecondaryToolbar(float x, float y) => _secondaryToolbar.Contains(x, y);
 
     public void TogglePanel(string panelId) => _panelSystem.TogglePanel(panelId);
 
@@ -95,7 +108,7 @@ public class LayoutManager
 
     public void HandleMouseMove(float x, float y, float deltaX, int screenWidth, int screenHeight)
     {
-        _panelSystem.OnMouseMove(x, y, screenWidth, screenHeight, HeaderHeight);
+        _panelSystem.OnMouseMove(x, y, screenWidth, screenHeight, TotalHeaderHeight);
     }
 
     public Omnijure.Visual.Drawing.DrawingTool? HandleToolbarClick(float x, float y)
@@ -153,11 +166,18 @@ public class LayoutManager
         // CAPA 0.5: Panel backgrounds + chrome
         _panelSystem.Render(canvas);
 
-        // CAPA 1: Chart content
-        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
-        bool hasChart = chartPanel != null && !chartPanel.IsClosed;
+        // CAPA 0.75: Secondary toolbar (context-sensitive action bar)
+        var activeCenterForToolbar = _panelSystem.GetActiveCenterTabId();
+        _secondaryToolbar.Render(canvas, screenWidth, activeCenterForToolbar, chartType, interval,
+            symbol, _assetPrice, _assetChange);
 
-        if (hasChart)
+        // CAPA 1: Center content (Chart or other active center panel)
+        var activeCenterId = _panelSystem.GetActiveCenterTabId();
+        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        bool chartIsActiveCenter = activeCenterId == PanelDefinitions.CHART
+            && chartPanel != null && !chartPanel.IsClosed;
+
+        if (chartIsActiveCenter)
         {
             var contentArea = chartPanel.ContentBounds;
 
@@ -204,6 +224,10 @@ public class LayoutManager
             canvas.Restore();
             canvas.Restore();
         }
+        else if (activeCenterId != PanelDefinitions.CHART)
+        {
+            // Non-chart center panel (e.g. Script Editor) — rendered by PanelContentRenderer
+        }
         else
         {
             RenderEmptyState(canvas, ChartRect);
@@ -235,6 +259,8 @@ public class LayoutManager
     }
 
     public void SetActiveScriptManager(Omnijure.Core.Scripting.ScriptManager? scripts) => _panelContent.SetActiveScriptManager(scripts);
+
+    public void UpdateAssetInfo(float price, float change) { _assetPrice = price; _assetChange = change; }
 
     public void UpdateFps(int fps) => _statusBar.UpdateFps(fps);
 
@@ -437,9 +463,16 @@ public class LayoutManager
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
     public bool IsResizingPanel => _panelSystem.IsResizing;
 
+    // Script editor passthrough
+    public bool HandleScriptEditorClick(float x, float y) => _panelContent.HandleScriptEditorClick(x, y);
+    public void ScriptEditorInsertChar(char ch) => _panelContent.InsertChar(ch);
+    public void ScriptEditorHandleKey(PanelContentRenderer.EditorKey key) => _panelContent.HandleEditorKey(key);
+    public bool IsScriptEditorFocused { get => _panelContent.IsEditorFocused; set => _panelContent.IsEditorFocused = value; }
+    public int ScriptEditorActiveScript { get => _panelContent.EditorActiveScript; set => _panelContent.EditorActiveScript = value; }
+
     // Layout persistence
     public List<PanelState> ExportLayout() => _panelSystem.ExportLayout();
     public void ImportLayout(List<PanelState> states) => _panelSystem.ImportLayout(states);
-    public void ImportActiveTabs(string bottom, string left, string right) => _panelSystem.ImportActiveTabs(bottom, left, right);
-    public (string bottom, string left, string right) ExportActiveTabs() => _panelSystem.ExportActiveTabs();
+    public void ImportActiveTabs(string bottom, string left, string right, string center = "") => _panelSystem.ImportActiveTabs(bottom, left, right, center);
+    public (string bottom, string left, string right, string center) ExportActiveTabs() => _panelSystem.ExportActiveTabs();
 }

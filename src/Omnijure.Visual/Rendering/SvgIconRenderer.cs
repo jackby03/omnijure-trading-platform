@@ -64,6 +64,14 @@ public static class SvgIconRenderer
         Plus,
         Layout,
 
+        // Toolbar actions
+        Stop,
+        Save,
+        FolderOpen,
+        Undo,
+        Redo,
+        Play,
+
         // Brand
         Logo
     }
@@ -206,6 +214,24 @@ public static class SvgIconRenderer
                 break;
             case Icon.Layout:
                 DrawLayout(canvas, paint);
+                break;
+            case Icon.Stop:
+                DrawStop(canvas, fillPaint);
+                break;
+            case Icon.Save:
+                DrawSave(canvas, paint);
+                break;
+            case Icon.FolderOpen:
+                DrawFolderOpen(canvas, paint, fillPaint);
+                break;
+            case Icon.Undo:
+                DrawUndo(canvas, paint);
+                break;
+            case Icon.Redo:
+                DrawRedo(canvas, paint);
+                break;
+            case Icon.Play:
+                DrawPlay(canvas, fillPaint);
                 break;
             case Icon.Logo:
                 DrawLogo(canvas, fillPaint);
@@ -626,6 +652,72 @@ public static class SvgIconRenderer
         canvas.DrawLine(10, 3, 10, 21, paint);
         // Horizontal divider (right side)
         canvas.DrawLine(10, 12, 21, 12, paint);
+    }
+
+    private static void DrawStop(SKCanvas canvas, SKPaint fillPaint)
+    {
+        // Filled rounded square (stop button)
+        canvas.DrawRoundRect(new SKRect(5, 5, 19, 19), 2, 2, fillPaint);
+    }
+
+    private static void DrawSave(SKCanvas canvas, SKPaint paint)
+    {
+        // Floppy disk outline
+        canvas.DrawRoundRect(new SKRect(4, 3, 20, 21), 2, 2, paint);
+        // Top slot
+        canvas.DrawRect(8, 3, 8, 6, paint);
+        // Bottom label area
+        canvas.DrawRect(7, 13, 10, 8, paint);
+    }
+
+    private static void DrawFolderOpen(SKCanvas canvas, SKPaint paint, SKPaint fillPaint)
+    {
+        // Folder body
+        using var path = new SKPath();
+        path.MoveTo(3, 7);
+        path.LineTo(3, 20);
+        path.LineTo(21, 20);
+        path.LineTo(21, 9);
+        path.LineTo(12, 9);
+        path.LineTo(10, 7);
+        path.Close();
+        canvas.DrawPath(path, paint);
+        // Folder tab
+        canvas.DrawLine(3, 7, 10, 7, paint);
+        canvas.DrawLine(10, 7, 12, 9, paint);
+    }
+
+    private static void DrawUndo(SKCanvas canvas, SKPaint paint)
+    {
+        // Curved arrow pointing left
+        using var path = new SKPath();
+        path.AddArc(new SKRect(6, 6, 20, 18), -30, -240);
+        canvas.DrawPath(path, paint);
+        // Arrow head
+        canvas.DrawLine(6, 8, 6, 14, paint);
+        canvas.DrawLine(6, 8, 12, 8, paint);
+    }
+
+    private static void DrawRedo(SKCanvas canvas, SKPaint paint)
+    {
+        // Curved arrow pointing right
+        using var path = new SKPath();
+        path.AddArc(new SKRect(4, 6, 18, 18), 210, 240);
+        canvas.DrawPath(path, paint);
+        // Arrow head
+        canvas.DrawLine(18, 8, 18, 14, paint);
+        canvas.DrawLine(18, 8, 12, 8, paint);
+    }
+
+    private static void DrawPlay(SKCanvas canvas, SKPaint fillPaint)
+    {
+        // Play triangle
+        using var path = new SKPath();
+        path.MoveTo(7, 4);
+        path.LineTo(7, 20);
+        path.LineTo(20, 12);
+        path.Close();
+        canvas.DrawPath(path, fillPaint);
     }
 
     private static SKPicture? _logoPicture;

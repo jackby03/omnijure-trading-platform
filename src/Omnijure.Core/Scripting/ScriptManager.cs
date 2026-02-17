@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Omnijure.Core.DataStructures;
 using Omnijure.Core.Scripting.SharpScript;
 
@@ -80,6 +81,49 @@ public class ScriptManager
 
         return _lastOutputs;
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FILE I/O
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Saves a script source to a .ss file.
+    /// </summary>
+    public void SaveToFile(int index, string filePath)
+    {
+        if (index < 0 || index >= _scripts.Count) return;
+        var dir = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+        File.WriteAllText(filePath, _scripts[index].Source);
+        _scripts[index].Name = Path.GetFileNameWithoutExtension(filePath);
+        _scripts[index].FilePath = filePath;
+    }
+
+    /// <summary>
+    /// Loads a script from a .ss file, adding it to the script list.
+    /// </summary>
+    public ActiveScript LoadFromFile(string filePath)
+    {
+        string source = File.ReadAllText(filePath);
+        string name = Path.GetFileNameWithoutExtension(filePath);
+        var script = AddScript(source, name);
+        script.FilePath = filePath;
+        return script;
+    }
+
+    /// <summary>
+    /// Gets the default scripts directory, creating it if needed.
+    /// </summary>
+    public static string GetScriptsDirectory()
+    {
+        string dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".omnijure", "scripts");
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+        return dir;
+    }
 }
 
 public class ActiveScript
@@ -90,4 +134,5 @@ public class ActiveScript
     public SharpScriptEngine Engine { get; set; } = new();
     public ScriptOutput? LastOutput { get; set; }
     public Dictionary<string, float> InputValues { get; set; } = new();
+    public string? FilePath { get; set; }
 }

@@ -182,7 +182,8 @@ public static partial class Program
             _layout.ImportActiveTabs(
                 _settings.Current.Layout.ActiveBottomTab,
                 _settings.Current.Layout.ActiveLeftTab,
-                _settings.Current.Layout.ActiveRightTab);
+                _settings.Current.Layout.ActiveRightTab,
+                _settings.Current.Layout.ActiveCenterTab);
         }
 
         // Wire up View menu panel toggles
@@ -206,6 +207,7 @@ public static partial class Program
             _settings.Current.Layout.ActiveBottomTab = tabs.bottom;
             _settings.Current.Layout.ActiveLeftTab = tabs.left;
             _settings.Current.Layout.ActiveRightTab = tabs.right;
+            _settings.Current.Layout.ActiveCenterTab = tabs.center;
             _settings.Save();
         };
         _settingsModalRenderer.OnResetLayout = () =>
@@ -300,7 +302,7 @@ public static partial class Program
         // 2. Interval Dropdown (clickeable)
         var intervals = new List<string> { "1m", "5m", "15m", "1h", "4h", "1d" };
         _intervalDropdown = new UiDropdown(0, 0, 0, 0, "Interval", intervals, (tf) => SwitchContext(_chartTabs.ActiveTab.Symbol, tf));
-        _uiDropdowns.Add(_intervalDropdown);
+        // Interval dropdown removed from header; timeframes are in SecondaryToolbar
 
         // 3. Chart Type Dropdown (data only - rendered in toolbar, not as separate dropdown)
         var chartTypes = new List<string> { "Candles", "Line", "Area" };
@@ -523,7 +525,15 @@ public static partial class Program
             // Window control buttons (close, maximize, minimize, drag)
             if (_toolbar.HandleMouseDown(_mousePos.X, _mousePos.Y, _window.Position.X, _window.Position.Y))
                 return;
-            
+
+            // Secondary toolbar click
+            var secondaryBtnId = _layout.HandleSecondaryToolbarClick(_mousePos.X, _mousePos.Y);
+            if (secondaryBtnId != null)
+            {
+                HandleSecondaryToolbarAction(secondaryBtnId);
+                return;
+            }
+
             UiDropdown clickedDd = null;
             foreach(var dd in _uiDropdowns)
             {
@@ -570,6 +580,14 @@ public static partial class Program
                     return;
                 }
             }
+
+            // Script editor click (tab bar, code area)
+            if (_layout.HandleScriptEditorClick(_mousePos.X, _mousePos.Y))
+                return;
+
+            // Unfocus script editor if clicking elsewhere
+            if (_layout.IsScriptEditorFocused)
+                _layout.IsScriptEditorFocused = false;
 
             // Chart tab bar click (before other chart interactions)
             if (_layout.HandleChartTabClick(_mousePos.X, _mousePos.Y, _chartTabs, () => SyncUiWithActiveTab()))
@@ -882,6 +900,7 @@ public static partial class Program
         _layout.SetActiveScriptManager(activeTab.Scripts);
         _layout.UpdateLayout(_window.Size.X, _window.Size.Y);
         _layout.UpdateChartTitle(activeTab.Symbol, activeTab.Timeframe, currentPrice);
+        _layout.UpdateAssetInfo(_assetDropdown?.CurrentPrice ?? 0, _assetDropdown?.PercentChange ?? 0);
 
         // Calculate visible candles based on actual chart content width
         // ChartRect = panel Bounds; content = Bounds - 16px padding - 36px toolbar - 60px price axis
@@ -944,6 +963,9 @@ public static partial class Program
         _toolbar.UpdateWindowSize(_window.Size.X, _window.Size.Y);
         _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y);
         _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _assetDropdown, _uiDropdowns, _uiButtons);
+
+        // Secondary toolbar mouse hover
+        _layout.UpdateSecondaryToolbarMouse(_mousePos.X, _mousePos.Y);
         
         // Render Search Modal (if visible or animating)
         if (_searchModal != null)
@@ -995,6 +1017,104 @@ public static partial class Program
         _surface = SKSurface.Create(_grContext, renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // SECONDARY TOOLBAR DISPATCH
+    // ═══════════════════════════════════════════════════════════
+    private static void HandleSecondaryToolbarAction(string buttonId)
+    {
+        var activeTab = _chartTabs.ActiveTab;
+        switch (buttonId)
+        {
+            // ── Chart Type ──
+            case "chart_type_candles": activeTab.ChartType = ChartType.Candles; break;
+            case "chart_type_line": activeTab.ChartType = ChartType.Line; break;
+            case "chart_type_area": activeTab.ChartType = ChartType.Area; break;
+            case "chart_type_bars": activeTab.ChartType = ChartType.Bars; break;
+
+            // ── Indicators (placeholder) ──
+            case "chart_indicator": break;
+
+            // ── Timeframes ──
+            case "tf_1m": SwitchContext(activeTab.Symbol, "1m"); break;
+            case "tf_5m": SwitchContext(activeTab.Symbol, "5m"); break;
+            case "tf_15m": SwitchContext(activeTab.Symbol, "15m"); break;
+            case "tf_1h": SwitchContext(activeTab.Symbol, "1h"); break;
+            case "tf_4h": SwitchContext(activeTab.Symbol, "4h"); break;
+            case "tf_1d": SwitchContext(activeTab.Symbol, "1d"); break;
+
+            // ── Chart Utilities ──
+            case "chart_screenshot": break; // TODO: screenshot to clipboard
+            case "chart_fullscreen":
+                _window.WindowState = _window.WindowState == Silk.NET.Windowing.WindowState.Maximized
+                    ? Silk.NET.Windowing.WindowState.Normal
+                    : Silk.NET.Windowing.WindowState.Maximized;
+                break;
+            case "chart_zoomin":
+                activeTab.Zoom = Math.Clamp(activeTab.Zoom * 1.2f, 0.05f, 50f);
+                break;
+            case "chart_zoomout":
+                activeTab.Zoom = Math.Clamp(activeTab.Zoom * 0.8f, 0.05f, 50f);
+                break;
+            case "chart_zoomreset":
+                activeTab.Zoom = 1.0f;
+                activeTab.ScrollOffset = 0;
+                break;
+
+            // ── Script File Operations ──
+            case "script_new":
+                activeTab.Scripts.AddScript("", $"Script {activeTab.Scripts.Count + 1}");
+                _layout.ScriptEditorActiveScript = activeTab.Scripts.Count - 1;
+                break;
+            case "script_open":
+                try
+                {
+                    var scriptsDir = Omnijure.Core.Scripting.ScriptManager.GetScriptsDirectory();
+                    var files = System.IO.Directory.GetFiles(scriptsDir, "*.ss");
+                    if (files.Length > 0)
+                        activeTab.Scripts.LoadFromFile(files[^1]); // Load most recent
+                }
+                catch { /* TODO: proper file dialog */ }
+                break;
+            case "script_save":
+                {
+                    int idx = _layout.ScriptEditorActiveScript;
+                    if (activeTab.Scripts.Count > 0 && idx < activeTab.Scripts.Count)
+                    {
+                        var script = activeTab.Scripts.Scripts[idx];
+                        var savePath = script.FilePath
+                            ?? System.IO.Path.Combine(
+                                Omnijure.Core.Scripting.ScriptManager.GetScriptsDirectory(),
+                                $"{script.Name}.ss");
+                        activeTab.Scripts.SaveToFile(idx, savePath);
+                    }
+                }
+                break;
+
+            // ── Script Execution ──
+            case "script_run":
+                if (activeTab.Scripts.Count > 0 && activeTab.Buffer.Count > 0)
+                    activeTab.Scripts.ExecuteAll(activeTab.Buffer);
+                break;
+            case "script_stop":
+                break; // TODO: CancellationToken support
+            case "script_toggle":
+                {
+                    int idx = _layout.ScriptEditorActiveScript;
+                    if (activeTab.Scripts.Count > 0 && idx < activeTab.Scripts.Count)
+                        activeTab.Scripts.ToggleScript(idx);
+                }
+                break;
+
+            // ── Script Editor Utilities ──
+            case "script_undo": break; // TODO: undo system
+            case "script_redo": break; // TODO: redo system
+            case "script_find": break; // TODO: find/replace
+            case "script_fontup": break; // TODO: increase editor font
+            case "script_fontdown": break; // TODO: decrease editor font
+            case "script_settings": break; // TODO: script settings panel
+        }
+    }
+
     private static void OnClose()
     {
         // Persist settings on close
@@ -1005,6 +1125,7 @@ public static partial class Program
             _settings.Current.Layout.ActiveBottomTab = tabs.bottom;
             _settings.Current.Layout.ActiveLeftTab = tabs.left;
             _settings.Current.Layout.ActiveRightTab = tabs.right;
+            _settings.Current.Layout.ActiveCenterTab = tabs.center;
             _settings.Current.Layout.WindowWidth = _window.Size.X;
             _settings.Current.Layout.WindowHeight = _window.Size.Y;
             _settings.Current.Layout.WindowX = _window.Position.X;

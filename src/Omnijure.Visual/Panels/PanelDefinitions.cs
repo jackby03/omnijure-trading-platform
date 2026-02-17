@@ -65,7 +65,7 @@ public static class PanelDefinitions
         [SCRIPT_EDITOR] = new PanelConfig
         {
             Id = SCRIPT_EDITOR, DisplayName = "Script Editor", Icon = SvgIconRenderer.Icon.Text,
-            DefaultPosition = PanelPosition.Right, DefaultWidth = 400, DefaultHeight = 600,
+            DefaultPosition = PanelPosition.Center, DefaultWidth = 800, DefaultHeight = 600,
             CanClose = true, CanCollapse = true, CanFloat = true, StartClosed = true
         },
         [ALERTS] = new PanelConfig

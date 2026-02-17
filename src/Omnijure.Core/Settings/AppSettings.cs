@@ -49,6 +49,7 @@ public class LayoutSettings
     public string ActiveBottomTab { get; set; } = "orderbook";
     public string ActiveLeftTab { get; set; } = "ai_assistant";
     public string ActiveRightTab { get; set; } = "portfolio";
+    public string ActiveCenterTab { get; set; } = "chart";
     public int WindowWidth { get; set; } = 1440;
     public int WindowHeight { get; set; } = 900;
     public int WindowX { get; set; } = -1;

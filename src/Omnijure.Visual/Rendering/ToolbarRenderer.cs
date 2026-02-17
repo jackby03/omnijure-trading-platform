@@ -429,51 +429,7 @@ public class ToolbarRenderer
             x += searchW + 8;
         }
         
-        canvas.DrawLine(x, rect.Top + 5, x, rect.Bottom - 5, sepPaint);
-        x += 8;
-        
-        // 2. Asset info (read-only, no clickeable)
-        if (assetInfo != null)
-        {
-            float iconSz = rect.Height - 8;
-            CryptoIconProvider.DrawCryptoIcon(canvas, assetInfo.SelectedItem, x, rect.Top + 4, (int)iconSz);
-            x += iconSz + 4;
-            canvas.DrawText(assetInfo.SelectedItem, x, midY + 4, _font, _textPaintLarge);
-            x += _font.MeasureText(assetInfo.SelectedItem) + 6;
-            
-            if (assetInfo.CurrentPrice > 0)
-            {
-                string priceText = $"${assetInfo.CurrentPrice:F2}";
-                canvas.DrawText(priceText, x, midY + 4, _fontSmall, _textPaint);
-                x += _fontSmall.MeasureText(priceText) + 5;
-                
-                SKColor cc = assetInfo.PercentChange >= 0 ? ThemeManager.Success : ThemeManager.Error;
-                string ct = $"{(assetInfo.PercentChange >= 0 ? "+" : "")}{assetInfo.PercentChange:F2}%";
-                using var cp = new SKPaint { Color = cc, IsAntialias = true };
-                canvas.DrawText(ct, x, midY + 4, _fontSmall, cp);
-                x += _fontSmall.MeasureText(ct) + 8;
-            }
-            canvas.DrawLine(x, rect.Top + 5, x, rect.Bottom - 5, sepPaint);
-            x += 8;
-        }
-        
-        // 3. Interval Dropdown
-        if (dropdowns != null)
-        {
-            var intervalDd = dropdowns.FirstOrDefault(d => d.Label == "Interval");
-            if (intervalDd != null)
-            {
-                float ddW = 70;
-                intervalDd.Rect = new SKRect(x, rect.Top + 2, x + ddW, rect.Bottom - 2);
-                canvas.DrawRoundRect(intervalDd.Rect, 3, 3, intervalDd.IsHovered ? _btnHover : _btnFill);
-                canvas.DrawText(intervalDd.SelectedItem, x + 6, midY + 4, _fontSmall, _textPaint);
-                float arrowX = intervalDd.Rect.Right - 10;
-                using var ap = new SKPaint { Color = ThemeManager.TextMuted, StrokeWidth = 1.2f, IsAntialias = true, StrokeCap = SKStrokeCap.Round };
-                canvas.DrawLine(arrowX - 2, midY - 1, arrowX, midY + 1, ap);
-                canvas.DrawLine(arrowX, midY + 1, arrowX + 2, midY - 1, ap);
-                x += ddW + 4;
-            }
-        }
+        // Asset info and interval moved to SecondaryToolbarRenderer
 
         // 5. Window Controls (derecha)
         float wcW = 46;

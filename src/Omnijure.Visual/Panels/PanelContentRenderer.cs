@@ -27,8 +27,18 @@ public class PanelContentRenderer
     // Script editor state
     private ScriptManager? _activeScriptManager;
     private int _editorActiveScript;
-    private int _editorCursorPos;
+    private int _editorCursorPos; // absolute position in source string
     private int _editorScrollLine;
+    private bool _isEditorFocused;
+    private int _cursorBlinkTicks;
+
+    // Script tab hit rects
+    private readonly List<(int index, SKRect tabRect, SKRect closeRect)> _scriptTabRects = new();
+    private SKRect _scriptAddTabRect;
+
+    public bool IsEditorFocused { get => _isEditorFocused; set => _isEditorFocused = value; }
+    public int EditorActiveScript { get => _editorActiveScript; set => _editorActiveScript = value; }
+    public int EditorCursorPos { get => _editorCursorPos; set => _editorCursorPos = value; }
 
     public void SetActiveScriptManager(ScriptManager? scripts) => _activeScriptManager = scripts;
 
@@ -1184,8 +1194,11 @@ public class PanelContentRenderer
         paint.StrokeWidth = 1;
         canvas.DrawLine(0, ScriptTabBarH, width, ScriptTabBarH, paint);
 
+        _scriptTabRects.Clear();
         using var tabFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 10);
         float tabX = 4;
+        float tabY = 2;
+        float tabH = ScriptTabBarH - 4;
 
         for (int i = 0; i < scripts.Count; i++)
         {
@@ -1193,15 +1206,24 @@ public class PanelContentRenderer
             bool isActive = i == _editorActiveScript;
             string label = script.Name;
             float labelW = tabFont.MeasureText(label);
-            float tabW = labelW + 16;
+            float closeW = 14;
+            float tabW = 10 + labelW + 8 + closeW + 6; // dot + label + gap + close + pad
+
+            var tabRect = new SKRect(tabX, tabY, tabX + tabW, tabY + tabH);
+            var closeRect = new SKRect(tabX + tabW - closeW - 4, tabY + (tabH - 10) / 2,
+                tabX + tabW - 4, tabY + (tabH - 10) / 2 + 10);
+            _scriptTabRects.Add((i, tabRect, closeRect));
 
             // Tab background
             paint.Style = SKPaintStyle.Fill;
             if (isActive)
             {
                 paint.Color = new SKColor(30, 34, 42);
-                var tabRect = new SKRect(tabX, 2, tabX + tabW, ScriptTabBarH - 2);
                 canvas.DrawRoundRect(new SKRoundRect(tabRect, 3, 3), paint);
+
+                // Active indicator
+                paint.Color = new SKColor(56, 139, 253);
+                canvas.DrawRect(tabX + 4, tabY + tabH - 2, tabW - 8, 2, paint);
             }
 
             // Enabled/disabled indicator dot
@@ -1212,8 +1234,30 @@ public class PanelContentRenderer
             paint.Color = isActive ? new SKColor(200, 205, 215) : new SKColor(100, 105, 115);
             canvas.DrawText(label, tabX + 14, ScriptTabBarH / 2 + 4, tabFont, paint);
 
-            tabX += tabW + 4;
+            // Close button (X)
+            paint.Color = isActive ? new SKColor(140, 145, 155) : new SKColor(80, 85, 95);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1.2f;
+            float cx = closeRect.MidX, cy = closeRect.MidY, cs = 3f;
+            canvas.DrawLine(cx - cs, cy - cs, cx + cs, cy + cs, paint);
+            canvas.DrawLine(cx + cs, cy - cs, cx - cs, cy + cs, paint);
+
+            tabX += tabW + 2;
         }
+
+        // (+) Add tab button
+        float addSize = tabH;
+        _scriptAddTabRect = new SKRect(tabX, tabY, tabX + addSize, tabY + addSize);
+        paint.Style = SKPaintStyle.Fill;
+        paint.Color = new SKColor(25, 29, 36);
+        canvas.DrawRoundRect(new SKRoundRect(_scriptAddTabRect, 4, 4), paint);
+
+        paint.Color = new SKColor(100, 108, 118);
+        paint.Style = SKPaintStyle.Stroke;
+        paint.StrokeWidth = 1.5f;
+        float plusCx = _scriptAddTabRect.MidX, plusCy = _scriptAddTabRect.MidY, plusSz = 5f;
+        canvas.DrawLine(plusCx - plusSz, plusCy, plusCx + plusSz, plusCy, paint);
+        canvas.DrawLine(plusCx, plusCy - plusSz, plusCx, plusCy + plusSz, paint);
     }
 
     private void RenderScriptToolbar(SKCanvas canvas, SKPaint paint, float width, float y, ScriptManager scripts)
@@ -1279,9 +1323,22 @@ public class PanelContentRenderer
 
         if (string.IsNullOrEmpty(source))
         {
+            // Show cursor even on empty source if focused
+            if (_isEditorFocused)
+            {
+                _cursorBlinkTicks++;
+                bool cursorVisible = (_cursorBlinkTicks / 30) % 2 == 0;
+                if (cursorVisible)
+                {
+                    paint.Color = new SKColor(200, 205, 215);
+                    canvas.DrawRect(ScriptGutterW + 8, 6, 1.5f, ScriptLineH - 2, paint);
+                }
+            }
+
             paint.Color = new SKColor(80, 85, 95);
             using var hintFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Italic), 11);
-            canvas.DrawText("Write your SharpScript here...", ScriptGutterW + 8, 24, hintFont, paint);
+            if (!_isEditorFocused)
+                canvas.DrawText("Write your SharpScript here...", ScriptGutterW + 8, 24, hintFont, paint);
             return;
         }
 
@@ -1299,6 +1356,13 @@ public class PanelContentRenderer
         var lines = source.Split('\n');
         using var monoFont = new SKFont(SKTypeface.FromFamilyName("Cascadia Code") ?? SKTypeface.FromFamilyName("Consolas"), 11);
 
+        // Calculate cursor line and column
+        int cursorLine = 0, cursorCol = 0;
+        if (_isEditorFocused)
+        {
+            AbsToLineCol(source, _editorCursorPos, out cursorLine, out cursorCol);
+        }
+
         int visibleLines = (int)(height / ScriptLineH) + 1;
         int startLine = (int)(scrollY / ScriptLineH);
         if (startLine < 0) startLine = 0;
@@ -1308,15 +1372,62 @@ public class PanelContentRenderer
             int lineNum = startLine + i;
             float y = i * ScriptLineH + ScriptLineH - 3;
 
+            // Highlight current line
+            if (_isEditorFocused && lineNum == cursorLine)
+            {
+                paint.Color = new SKColor(25, 28, 36);
+                canvas.DrawRect(ScriptGutterW, i * ScriptLineH, width - ScriptGutterW, ScriptLineH, paint);
+            }
+
             // Line number
-            paint.Color = new SKColor(65, 70, 80);
+            paint.Color = (_isEditorFocused && lineNum == cursorLine)
+                ? new SKColor(130, 135, 145) : new SKColor(65, 70, 80);
             string numStr = (lineNum + 1).ToString();
             float numW = monoFont.MeasureText(numStr);
             canvas.DrawText(numStr, ScriptGutterW - numW - 4, y, monoFont, paint);
 
             // Syntax-highlighted source line
             DrawHighlightedLine(canvas, paint, monoFont, lines[lineNum], ScriptGutterW + 8, y, width - ScriptGutterW - 8);
+
+            // Cursor on this line
+            if (_isEditorFocused && lineNum == cursorLine)
+            {
+                _cursorBlinkTicks++;
+                bool cursorVisible = (_cursorBlinkTicks / 30) % 2 == 0;
+                if (cursorVisible)
+                {
+                    string beforeCursor = cursorCol <= lines[lineNum].Length
+                        ? lines[lineNum][..cursorCol] : lines[lineNum];
+                    float cursorX = ScriptGutterW + 8 + monoFont.MeasureText(beforeCursor);
+                    paint.Color = new SKColor(200, 205, 215);
+                    canvas.DrawRect(cursorX, i * ScriptLineH + 2, 1.5f, ScriptLineH - 2, paint);
+                }
+            }
         }
+    }
+
+    private static void AbsToLineCol(string source, int absPos, out int line, out int col)
+    {
+        line = 0;
+        col = 0;
+        int pos = Math.Min(absPos, source.Length);
+        for (int i = 0; i < pos; i++)
+        {
+            if (source[i] == '\n') { line++; col = 0; }
+            else col++;
+        }
+    }
+
+    private static int LineColToAbs(string source, int line, int col)
+    {
+        int currentLine = 0;
+        int pos = 0;
+        while (pos < source.Length && currentLine < line)
+        {
+            if (source[pos] == '\n') currentLine++;
+            pos++;
+        }
+        return Math.Min(pos + col, source.Length);
     }
 
     private static void DrawHighlightedLine(SKCanvas canvas, SKPaint paint, SKFont font, string line, float x, float y, float maxW)
@@ -1594,5 +1705,209 @@ public class PanelContentRenderer
         float headerH = 48;
         float inputH = 52;
         return panel.ContentBounds.Height - headerH - inputH;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Script Editor Interaction
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Handle a mouse click in the script editor panel. Returns true if consumed.
+    /// Coordinates are in screen space.
+    /// </summary>
+    public bool HandleScriptEditorClick(float screenX, float screenY)
+    {
+        if (_activeScriptManager == null) return false;
+
+        var panel = _panelSystem.GetPanel(PanelDefinitions.SCRIPT_EDITOR);
+        if (panel == null || panel.IsClosed) return false;
+        if (!panel.ContentBounds.Contains(screenX, screenY)) return false;
+
+        // Convert to panel-local coordinates
+        float localX = screenX - panel.ContentBounds.Left;
+        float localY = screenY - panel.ContentBounds.Top;
+
+        // Check script tab bar click
+        if (localY < ScriptTabBarH)
+        {
+            // (+) Add tab button
+            if (_scriptAddTabRect.Contains(localX, localY))
+            {
+                _activeScriptManager.AddScript("", $"Script {_activeScriptManager.Count + 1}");
+                _editorActiveScript = _activeScriptManager.Count - 1;
+                _editorCursorPos = 0;
+                _isEditorFocused = true;
+                return true;
+            }
+
+            // Tab clicks
+            foreach (var (index, tabRect, closeRect) in _scriptTabRects)
+            {
+                if (tabRect.Contains(localX, localY))
+                {
+                    // Close button
+                    if (closeRect.Contains(localX, localY))
+                    {
+                        _activeScriptManager.RemoveScript(index);
+                        if (_editorActiveScript >= _activeScriptManager.Count)
+                            _editorActiveScript = Math.Max(0, _activeScriptManager.Count - 1);
+                        _editorCursorPos = 0;
+                        return true;
+                    }
+
+                    // Switch tab
+                    if (index != _editorActiveScript)
+                    {
+                        _editorActiveScript = index;
+                        _editorCursorPos = 0;
+                    }
+                    _isEditorFocused = true;
+                    return true;
+                }
+            }
+            return true; // consume click in tab bar area
+        }
+
+        // Check toolbar area (pass through)
+        if (localY < ScriptTabBarH + ScriptToolbarH)
+            return false;
+
+        // Code area click — position cursor
+        _isEditorFocused = true;
+        _cursorBlinkTicks = 0; // reset blink so cursor is immediately visible
+
+        if (_activeScriptManager.Count == 0 || _editorActiveScript >= _activeScriptManager.Count)
+            return true;
+
+        var source = _activeScriptManager.Scripts[_editorActiveScript].Source ?? "";
+        var lines = source.Split('\n');
+
+        float codeY = localY - ScriptTabBarH - ScriptToolbarH;
+        float scrollY = _panelScrollOffsets.GetValueOrDefault(PanelDefinitions.SCRIPT_EDITOR, 0);
+        int clickedLine = (int)((codeY + scrollY) / ScriptLineH);
+        clickedLine = Math.Clamp(clickedLine, 0, Math.Max(0, lines.Length - 1));
+
+        // Calculate column from X position
+        float codeX = localX - ScriptGutterW - 8;
+        if (codeX < 0) codeX = 0;
+
+        using var monoFont = new SKFont(SKTypeface.FromFamilyName("Cascadia Code") ?? SKTypeface.FromFamilyName("Consolas"), 11);
+        string lineText = clickedLine < lines.Length ? lines[clickedLine] : "";
+        int col = 0;
+        for (int c = 0; c < lineText.Length; c++)
+        {
+            float charW = monoFont.MeasureText(lineText[..(c + 1)]);
+            if (charW > codeX) break;
+            col = c + 1;
+        }
+
+        _editorCursorPos = LineColToAbs(source, clickedLine, col);
+        return true;
+    }
+
+    /// <summary>
+    /// Insert a character at the cursor position.
+    /// </summary>
+    public void InsertChar(char ch)
+    {
+        if (_activeScriptManager == null || _activeScriptManager.Count == 0) return;
+        if (_editorActiveScript >= _activeScriptManager.Count) return;
+        if (!_isEditorFocused) return;
+
+        var source = _activeScriptManager.Scripts[_editorActiveScript].Source ?? "";
+        int pos = Math.Clamp(_editorCursorPos, 0, source.Length);
+        string newSource = source.Insert(pos, ch.ToString());
+        _activeScriptManager.UpdateSource(_editorActiveScript, newSource);
+        _editorCursorPos = pos + 1;
+        _cursorBlinkTicks = 0;
+    }
+
+    /// <summary>
+    /// Handle special keys in the script editor.
+    /// </summary>
+    public void HandleEditorKey(EditorKey key)
+    {
+        if (_activeScriptManager == null || _activeScriptManager.Count == 0) return;
+        if (_editorActiveScript >= _activeScriptManager.Count) return;
+        if (!_isEditorFocused) return;
+
+        var source = _activeScriptManager.Scripts[_editorActiveScript].Source ?? "";
+        _cursorBlinkTicks = 0;
+
+        switch (key)
+        {
+            case EditorKey.Backspace:
+                if (_editorCursorPos > 0 && source.Length > 0)
+                {
+                    int pos = Math.Min(_editorCursorPos, source.Length);
+                    string ns = source.Remove(pos - 1, 1);
+                    _activeScriptManager.UpdateSource(_editorActiveScript, ns);
+                    _editorCursorPos = pos - 1;
+                }
+                break;
+
+            case EditorKey.Delete:
+                if (_editorCursorPos < source.Length)
+                {
+                    string ns = source.Remove(_editorCursorPos, 1);
+                    _activeScriptManager.UpdateSource(_editorActiveScript, ns);
+                }
+                break;
+
+            case EditorKey.Enter:
+                InsertChar('\n');
+                break;
+
+            case EditorKey.Left:
+                if (_editorCursorPos > 0) _editorCursorPos--;
+                break;
+
+            case EditorKey.Right:
+                if (_editorCursorPos < source.Length) _editorCursorPos++;
+                break;
+
+            case EditorKey.Up:
+            {
+                AbsToLineCol(source, _editorCursorPos, out int line, out int col);
+                if (line > 0)
+                    _editorCursorPos = LineColToAbs(source, line - 1, col);
+                break;
+            }
+
+            case EditorKey.Down:
+            {
+                AbsToLineCol(source, _editorCursorPos, out int line, out int col);
+                int lineCount = source.Split('\n').Length;
+                if (line < lineCount - 1)
+                    _editorCursorPos = LineColToAbs(source, line + 1, col);
+                break;
+            }
+
+            case EditorKey.Home:
+            {
+                AbsToLineCol(source, _editorCursorPos, out int line, out _);
+                _editorCursorPos = LineColToAbs(source, line, 0);
+                break;
+            }
+
+            case EditorKey.End:
+            {
+                AbsToLineCol(source, _editorCursorPos, out int line, out _);
+                var lines = source.Split('\n');
+                int lineLen = line < lines.Length ? lines[line].Length : 0;
+                _editorCursorPos = LineColToAbs(source, line, lineLen);
+                break;
+            }
+
+            case EditorKey.Tab:
+                // Insert 4 spaces
+                for (int i = 0; i < 4; i++) InsertChar(' ');
+                break;
+        }
+    }
+
+    public enum EditorKey
+    {
+        Backspace, Delete, Enter, Left, Right, Up, Down, Home, End, Tab
     }
 }

@@ -59,16 +59,18 @@ public class PanelSystem
     private SKRect _bottomTabBarRect;
     private List<(string id, SKRect rect)> _bottomTabRects = new();
     
-    // Side tab system (Left/Right docking with tabs)
+    // Side tab system (Left/Right/Center docking with tabs)
     private readonly Dictionary<PanelPosition, string> _activeTabIds = new()
     {
         [PanelPosition.Left] = PanelDefinitions.AI_ASSISTANT,
-        [PanelPosition.Right] = PanelDefinitions.PORTFOLIO
+        [PanelPosition.Right] = PanelDefinitions.PORTFOLIO,
+        [PanelPosition.Center] = PanelDefinitions.CHART
     };
     private readonly Dictionary<PanelPosition, List<(string id, SKRect rect)>> _sideTabRects = new()
     {
         [PanelPosition.Left] = new(),
-        [PanelPosition.Right] = new()
+        [PanelPosition.Right] = new(),
+        [PanelPosition.Center] = new()
     };
     private readonly Dictionary<PanelPosition, SKRect> _sideTabBarRects = new();
 
@@ -189,18 +191,37 @@ public class PanelSystem
         // ???????????????????????????????????????????????????????????
         // PASO 4: Center panel ocupa el espacio restante
         // ???????????????????????????????????????????????????????????
-        var centerPanel = _panels.Values.FirstOrDefault(p => p.Position == PanelPosition.Center && !p.IsClosed);
-        if (centerPanel != null)
+        var centerPanels = _panels.Values
+            .Where(p => p.Position == PanelPosition.Center && !p.IsFloating && !p.IsClosed)
+            .OrderBy(p => p.DockOrder)
+            .ToList();
+
+        if (centerPanels.Count > 0)
         {
-            centerPanel.Bounds = new SKRect(currentLeftX, topEdgeY, currentRightX, currentBottomY);
+            if (!centerPanels.Any(p => p.Config.Id == _activeTabIds.GetValueOrDefault(PanelPosition.Center)))
+                _activeTabIds[PanelPosition.Center] = centerPanels[0].Config.Id;
+            var activeCenter = centerPanels.First(p => p.Config.Id == _activeTabIds[PanelPosition.Center]);
+
+            if (centerPanels.Count > 1)
+            {
+                // Tab bar at top of center area
+                _sideTabBarRects[PanelPosition.Center] = new SKRect(currentLeftX, topEdgeY, currentRightX, topEdgeY + TabBarHeight);
+                activeCenter.Bounds = new SKRect(currentLeftX, topEdgeY + TabBarHeight, currentRightX, currentBottomY);
+            }
+            else
+            {
+                _sideTabBarRects.Remove(PanelPosition.Center);
+                activeCenter.Bounds = new SKRect(currentLeftX, topEdgeY, currentRightX, currentBottomY);
+            }
         }
+        else { _sideTabBarRects.Remove(PanelPosition.Center); }
 
         // Update handle positions for visible panels (skip inactive tabs)
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed))
         {
             if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
                 continue;
-            if ((panel.Position == PanelPosition.Left || panel.Position == PanelPosition.Right)
+            if ((panel.Position == PanelPosition.Left || panel.Position == PanelPosition.Right || panel.Position == PanelPosition.Center)
                 && !panel.IsFloating
                 && panel.Config.Id != _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id))
                 continue;
@@ -255,14 +276,17 @@ public class PanelSystem
     /// </summary>
     public void Render(SKCanvas canvas)
     {
-        // CAPA 1: Center panel chrome
-        var centerPanel = _panels.Values.FirstOrDefault(p => p.Position == PanelPosition.Center && !p.IsClosed && p != _draggingPanel);
+        // CAPA 1: Center panel chrome (only active center tab)
+        var activeCenterId = _activeTabIds.GetValueOrDefault(PanelPosition.Center, PanelDefinitions.CHART);
+        var centerPanel = _panels.Values.FirstOrDefault(p =>
+            p.Position == PanelPosition.Center && !p.IsFloating && !p.IsClosed
+            && p.Config.Id == activeCenterId && p != _draggingPanel);
         if (centerPanel != null)
         {
             RenderPanel(canvas, centerPanel);
         }
-        
-        // CAPA 2: Bottom tab bar + active bottom panel
+
+        // CAPA 2: Bottom tab bar + active bottom panel + side/center tab bars
         RenderBottomTabBar(canvas);
         RenderSideTabBars(canvas);
         var activeBottomPanel = _panels.Values.FirstOrDefault(p => 
@@ -422,7 +446,10 @@ public class PanelSystem
                 paint.Color = new SKColor(40, 45, 55);
                 paint.Style = SKPaintStyle.Stroke;
                 paint.StrokeWidth = 1;
-                canvas.DrawLine(barRect.Left, barRect.Top, barRect.Right, barRect.Top, paint);
+                if (position == PanelPosition.Center)
+                    canvas.DrawLine(barRect.Left, barRect.Bottom, barRect.Right, barRect.Bottom, paint);
+                else
+                    canvas.DrawLine(barRect.Left, barRect.Top, barRect.Right, barRect.Top, paint);
 
                 _sideTabRects[position].Clear();
                 
@@ -447,16 +474,19 @@ public class PanelSystem
                         paint.Style = SKPaintStyle.Fill;
                         paint.Color = new SKColor(30, 34, 42);
                         canvas.DrawRoundRect(new SKRoundRect(tabRect, 4, 4), paint);
-                        
-                        // Active indicator on top (VS-style, tabs at bottom)
+
+                        // Active indicator: bottom for center (tab bar on top), top for sides (tab bar on bottom)
                         paint.Color = new SKColor(56, 139, 253);
-                        canvas.DrawRect(tabX + 4, tabY, tabW - 8, 2, paint);
+                        if (position == PanelPosition.Center)
+                            canvas.DrawRect(tabX + 4, tabY + tabH - 2, tabW - 8, 2, paint);
+                        else
+                            canvas.DrawRect(tabX + 4, tabY, tabW - 8, 2, paint);
                     }
-                    
-                    SvgIconRenderer.DrawIcon(canvas, tab.Config.Icon, 
+
+                    SvgIconRenderer.DrawIcon(canvas, tab.Config.Icon,
                         tabX + 6, tabY + (tabH - 12) / 2, 12,
                         isActive ? new SKColor(56, 139, 253) : new SKColor(100, 108, 118));
-                    
+
                     paint.Style = SKPaintStyle.Fill;
                     paint.Color = isActive ? new SKColor(220, 225, 235) : new SKColor(100, 108, 118);
                     paint.IsAntialias = true;
@@ -1027,9 +1057,9 @@ public class PanelSystem
         _activePanel = null;
         foreach (var ap in _panels.Values.OrderByDescending(ap => ap.IsFloating))
         {
-            if (ap.IsClosed || ap.Position == PanelPosition.Center) continue;
+            if (ap.IsClosed) continue;
             if (ap.Position == PanelPosition.Bottom && !ap.IsFloating && ap.Config.Id != _activeBottomTabId) continue;
-            if (ap.Position is PanelPosition.Left or PanelPosition.Right && !ap.IsFloating
+            if (ap.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center && !ap.IsFloating
                 && ap.Config.Id != _activeTabIds.GetValueOrDefault(ap.Position, ap.Config.Id)) continue;
             if (ap.Bounds.Contains(x, y)) { _activePanel = ap; break; }
         }
@@ -1099,8 +1129,12 @@ public class PanelSystem
         foreach (var panel in _panels.Values.OrderByDescending(p => p.IsFloating))
         {
             if (panel.IsClosed) continue;
-            // Skip inactive bottom tabs (they don't have valid bounds)
+            // Skip inactive tabs (they don't have valid bounds)
             if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
+                continue;
+            if ((panel.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center)
+                && !panel.IsFloating
+                && panel.Config.Id != _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id))
                 continue;
             
             // Close handle - CERRAR panel (no flotar)
@@ -1143,7 +1177,7 @@ public class PanelSystem
                 // Auto-activate as the active tab when docking
                 if (_currentDockZone.Position == PanelPosition.Bottom)
                     _activeBottomTabId = _draggingPanel.Config.Id;
-                else if (_currentDockZone.Position is PanelPosition.Left or PanelPosition.Right)
+                else if (_currentDockZone.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center)
                     _activeTabIds[_currentDockZone.Position] = _draggingPanel.Config.Id;
             }
             else
@@ -1153,9 +1187,11 @@ public class PanelSystem
                 _draggingPanel.IsFloating = _originalIsFloating;
                 _draggingPanel.Bounds = _originalBounds;
                 
-                // Re-activate as bottom tab if restoring to bottom
+                // Re-activate tab if restoring to docked position
                 if (_originalPosition == PanelPosition.Bottom && !_originalIsFloating)
                     _activeBottomTabId = _draggingPanel.Config.Id;
+                else if (_originalPosition is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center && !_originalIsFloating)
+                    _activeTabIds[_originalPosition] = _draggingPanel.Config.Id;
             }
         }
 
@@ -1199,6 +1235,10 @@ public class PanelSystem
             {
                 if (panel.IsClosed) continue;
                 if (panel.Position == PanelPosition.Bottom && !panel.IsFloating && panel.Config.Id != _activeBottomTabId)
+                    continue;
+                if ((panel.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center)
+                    && !panel.IsFloating
+                    && panel.Config.Id != _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id))
                     continue;
                 if (panel.Bounds.Contains(x, y))
                 {
@@ -1252,11 +1292,11 @@ public class PanelSystem
                         if (remainingTabs.Count > 0)
                             _activeBottomTabId = remainingTabs[0].Config.Id;
                     }
-                    else if (_draggingPanel.Position is PanelPosition.Left or PanelPosition.Right)
+                    else if (_draggingPanel.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center)
                     {
-                        _draggingPanel.FloatingWidth = _draggingPanel.Bounds.Width;
+                        _draggingPanel.FloatingWidth = Math.Min(_draggingPanel.Bounds.Width, 600);
                         _draggingPanel.FloatingHeight = Math.Min(_draggingPanel.Bounds.Height, 400);
-                        
+
                         var remainingSide = _panels.Values
                             .Where(p => p.Position == _draggingPanel.Position && !p.IsFloating && !p.IsClosed && p != _draggingPanel)
                             .OrderBy(p => p.DockOrder).ToList();
@@ -1398,9 +1438,11 @@ public class PanelSystem
             if (!panel.IsClosed)
             {
                 panel.IsCollapsed = false;
-                // If it's a bottom panel, make it the active tab
+                // Make it the active tab in its dock position
                 if (panel.Position == PanelPosition.Bottom)
                     _activeBottomTabId = panelId;
+                else if (panel.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center)
+                    _activeTabIds[panel.Position] = panelId;
             }
         }
     }
@@ -1409,7 +1451,7 @@ public class PanelSystem
     {
         if (panel.Position == PanelPosition.Bottom)
             return panel.Config.Id == _activeBottomTabId;
-        if (panel.Position == PanelPosition.Left || panel.Position == PanelPosition.Right)
+        if (panel.Position is PanelPosition.Left or PanelPosition.Right or PanelPosition.Center)
             return panel.Config.Id == _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id);
         return true;
     }
@@ -1489,21 +1531,25 @@ public class PanelSystem
         }
     }
 
-    public void ImportActiveTabs(string bottomTab, string leftTab, string rightTab)
+    public void ImportActiveTabs(string bottomTab, string leftTab, string rightTab, string centerTab = "")
     {
         if (!string.IsNullOrEmpty(bottomTab)) _activeBottomTabId = bottomTab;
         if (!string.IsNullOrEmpty(leftTab)) _activeTabIds[PanelPosition.Left] = leftTab;
         if (!string.IsNullOrEmpty(rightTab)) _activeTabIds[PanelPosition.Right] = rightTab;
+        if (!string.IsNullOrEmpty(centerTab)) _activeTabIds[PanelPosition.Center] = centerTab;
     }
 
-    public (string bottom, string left, string right) ExportActiveTabs()
+    public (string bottom, string left, string right, string center) ExportActiveTabs()
     {
         return (
             _activeBottomTabId,
             _activeTabIds.GetValueOrDefault(PanelPosition.Left, ""),
-            _activeTabIds.GetValueOrDefault(PanelPosition.Right, "")
+            _activeTabIds.GetValueOrDefault(PanelPosition.Right, ""),
+            _activeTabIds.GetValueOrDefault(PanelPosition.Center, PanelDefinitions.CHART)
         );
     }
+
+    public string GetActiveCenterTabId() => _activeTabIds.GetValueOrDefault(PanelPosition.Center, PanelDefinitions.CHART);
 }
 
 /// <summary>

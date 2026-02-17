@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using Silk.NET.Maths;
 using Silk.NET.Input;
+using Omnijure.Core.Scripting;
 using Omnijure.Visual.Rendering;
 
 namespace Omnijure.Visual;
@@ -39,6 +41,16 @@ public static partial class Program
             return;
         }
         
+        // Script editor character input
+        if (_layout.IsScriptEditorFocused)
+        {
+            if (!char.IsControl(arg2))
+            {
+                _layout.ScriptEditorInsertChar(arg2);
+            }
+            return;
+        }
+
         var openDd = System.Linq.Enumerable.FirstOrDefault(_uiDropdowns, d => d.IsOpen);
         if (openDd != null)
             openDd.SearchQuery += arg2;
@@ -158,6 +170,60 @@ public static partial class Program
             return;
         }
 
+        // Script editor key handling
+        if (_layout.IsScriptEditorFocused)
+        {
+            // Allow Ctrl shortcuts to pass through
+            bool ctrl = arg1.IsKeyPressed(Key.ControlLeft) || arg1.IsKeyPressed(Key.ControlRight);
+            if (ctrl)
+            {
+                // Ctrl+S, Ctrl+N, Ctrl+T still handled by global shortcuts below
+                if (arg2 == Key.S || arg2 == Key.N || arg2 == Key.T)
+                    goto GlobalShortcuts;
+            }
+
+            switch (arg2)
+            {
+                case Key.Escape:
+                    _layout.IsScriptEditorFocused = false;
+                    return;
+                case Key.Backspace:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Backspace);
+                    return;
+                case Key.Delete:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Delete);
+                    return;
+                case Key.Enter:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Enter);
+                    return;
+                case Key.Left:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Left);
+                    return;
+                case Key.Right:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Right);
+                    return;
+                case Key.Up:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Up);
+                    return;
+                case Key.Down:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Down);
+                    return;
+                case Key.Home:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Home);
+                    return;
+                case Key.End:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.End);
+                    return;
+                case Key.Tab:
+                    _layout.ScriptEditorHandleKey(Omnijure.Visual.Rendering.PanelContentRenderer.EditorKey.Tab);
+                    return;
+            }
+            // F5 still works even while focused
+            if (arg2 == Key.F5) { HandleSecondaryToolbarAction("script_run"); return; }
+            return;
+        }
+
+        GlobalShortcuts:
         // Global shortcuts
         var activeTab = _chartTabs.ActiveTab;
         if (arg2 == Key.Space) { activeTab.ScrollOffset = 0; activeTab.Zoom = 1.0f; }
@@ -168,6 +234,21 @@ public static partial class Program
         if (arg2 == Key.Number1) SwitchContext(activeTab.Symbol, "1m");
         if (arg2 == Key.Number2) SwitchContext(activeTab.Symbol, "5m");
         if (arg2 == Key.Number3) SwitchContext(activeTab.Symbol, "15m");
+        if (arg2 == Key.Number4) SwitchContext(activeTab.Symbol, "1h");
+        if (arg2 == Key.Number5) SwitchContext(activeTab.Symbol, "4h");
+        if (arg2 == Key.Number6) SwitchContext(activeTab.Symbol, "1d");
+
+        // Script shortcuts
+        if (arg2 == Key.F5) HandleSecondaryToolbarAction("script_run");
+        if (arg2 == Key.F11) HandleSecondaryToolbarAction("chart_fullscreen");
+
+        // Ctrl shortcuts
+        if (arg1.IsKeyPressed(Key.ControlLeft) || arg1.IsKeyPressed(Key.ControlRight))
+        {
+            if (arg2 == Key.N) HandleSecondaryToolbarAction("script_new");
+            if (arg2 == Key.S) HandleSecondaryToolbarAction("script_save");
+            if (arg2 == Key.T) HandleSecondaryToolbarAction("script_toggle");
+        }
 
         // Asset shortcuts
         if (arg2 == Key.F1) SwitchContext("BTCUSDT", activeTab.Timeframe);

@@ -5,7 +5,8 @@
       "Bash(dir:*)",
       "Bash(dotnet restore:*)",
       "Bash(findstr:*)",
-      "Bash(Select-String \"error CS\")"
+      "Bash(Select-String \"error CS\")",
+      "Bash(Select-String -Pattern \"error CS|Error|correcta\")"
     ]
   }
 }
