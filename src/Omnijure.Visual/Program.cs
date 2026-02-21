@@ -4,9 +4,7 @@ using Silk.NET.Maths;
 using Silk.NET.OpenGL; // Raw GL
 using SkiaSharp;
 using Omnijure.Visual.Rendering;
-using Omnijure.Visual.Input;
-using Omnijure.Core.DataStructures;
-using Omnijure.Core.Network;
+using Omnijure.Visual.Shared.UI.Input;
 using Omnijure.Core.Features.Settings.Api;
 using Omnijure.Core.Features.Settings.Model;
 
@@ -35,7 +33,7 @@ public static partial class Program
     
     // Chart Tabs
     private static ChartTabManager _chartTabs;
-    private static Omnijure.Core.Events.IEventBus _eventBus;
+    private static Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus _eventBus;
 
     // UI Elements
     private static List<UiButton> _uiButtons = new List<UiButton>();
@@ -157,11 +155,11 @@ public static partial class Program
         _settingsModalRenderer = new SettingsModalRenderer();
         _settingsModal = new UiSettingsModal();
 
-        var serviceProvider = Omnijure.Visual.Core.ApplicationBootstrapper.ConfigureServices();
+        var serviceProvider = Omnijure.Visual.App.ApplicationBootstrapper.ConfigureServices();
         _layout = serviceProvider.GetRequiredService<LayoutManager>();
         _settings = serviceProvider.GetRequiredService<ISettingsProvider>();
-        _eventBus = serviceProvider.GetRequiredService<Omnijure.Core.Events.IEventBus>();
-        _chartTabs = Omnijure.Visual.Core.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
+        _eventBus = serviceProvider.GetRequiredService<Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus>();
+        _chartTabs = Omnijure.Visual.App.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
 
         // Wire up View menu panel toggles
         _toolbar.SetPanelCallbacks(
@@ -285,8 +283,8 @@ public static partial class Program
         _chartTabs.SwitchContext(symbol, interval);
 
         var tab = _chartTabs.ActiveTab;
-        _eventBus.Publish(new Omnijure.Core.Events.SymbolChangedEvent(tab.Id, symbol));
-        _eventBus.Publish(new Omnijure.Core.Events.IntervalChangedEvent(tab.Id, interval));
+        _eventBus.Publish(new Omnijure.Core.Shared.Infrastructure.EventBus.SymbolChangedEvent(tab.Id, symbol));
+        _eventBus.Publish(new Omnijure.Core.Shared.Infrastructure.EventBus.IntervalChangedEvent(tab.Id, interval));
 
         // Update Title
         _window.Title = $"Omnijure - {tab.Symbol} [{tab.Timeframe}]";
@@ -322,7 +320,7 @@ public static partial class Program
 
     private static void SetupInput()
     {
-        _inputManager = new Omnijure.Visual.Input.GlobalInputManager(
+        _inputManager = new Omnijure.Visual.Shared.UI.Input.GlobalInputManager(
             _layout, _chartTabs, _toolbar, _settingsModal, _settingsModalRenderer,
             _searchModal, _searchBox, _assetDropdown, _uiDropdowns, _uiButtons
         )
@@ -394,35 +392,35 @@ public static partial class Program
         // Handle different drawing tools
         switch (tab.DrawingState.ActiveTool)
         {
-            case Omnijure.Visual.Drawing.DrawingTool.HorizontalLine:
-                var hLine = new Omnijure.Visual.Drawing.HorizontalLineObject(price)
+            case Omnijure.Visual.Shared.Lib.Drawing.DrawingTool.HorizontalLine:
+                var hLine = new Omnijure.Visual.Shared.Lib.Drawing.HorizontalLineObject(price)
                 {
                     Label = null
                 };
                 tab.DrawingState.Objects.Add(hLine);
-                tab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
+                tab.DrawingState.ActiveTool = Omnijure.Visual.Shared.Lib.Drawing.DrawingTool.None;
                 break;
 
-            case Omnijure.Visual.Drawing.DrawingTool.TrendLine:
+            case Omnijure.Visual.Shared.Lib.Drawing.DrawingTool.TrendLine:
                 if (tab.DrawingState.CurrentDrawing == null)
                 {
-                    var tLine = new Omnijure.Visual.Drawing.TrendLineObject
+                    var tLine = new Omnijure.Visual.Shared.Lib.Drawing.TrendLineObject
                     {
                         Start = (candleIndex, price),
                         End = (candleIndex, price)
                     };
                     tab.DrawingState.CurrentDrawing = tLine;
                 }
-                else if (tab.DrawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
+                else if (tab.DrawingState.CurrentDrawing is Omnijure.Visual.Shared.Lib.Drawing.TrendLineObject trendLine)
                 {
                     trendLine.End = (candleIndex, price);
                     tab.DrawingState.Objects.Add(trendLine);
                     tab.DrawingState.CurrentDrawing = null;
-                    tab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
+                    tab.DrawingState.ActiveTool = Omnijure.Visual.Shared.Lib.Drawing.DrawingTool.None;
                 }
                 break;
 
-            case Omnijure.Visual.Drawing.DrawingTool.None:
+            case Omnijure.Visual.Shared.Lib.Drawing.DrawingTool.None:
             default:
                 break;
         }
@@ -445,9 +443,9 @@ public static partial class Program
         if (activeTab.Buffer.Count > 0) currentPrice = activeTab.Buffer[0].Close;
 
         // 1. THE METAL: Calculate Indicators
-        float rsi = Omnijure.Core.Math.TechnicalAnalysis.CalculateRSI(activeTab.Buffer, 14);
-        float rvol = Omnijure.Core.Math.TechnicalAnalysis.CalculateRVOL(activeTab.Buffer, 20);
-        float sma = Omnijure.Core.Math.TechnicalAnalysis.CalculateSMA(activeTab.Buffer, 50);
+        float rsi = Omnijure.Core.Shared.Lib.Math.TechnicalAnalysis.CalculateRSI(activeTab.Buffer, 14);
+        float rvol = Omnijure.Core.Shared.Lib.Math.TechnicalAnalysis.CalculateRVOL(activeTab.Buffer, 20);
+        float sma = Omnijure.Core.Shared.Lib.Math.TechnicalAnalysis.CalculateSMA(activeTab.Buffer, 50);
 
         // 2. THE MIND: Execute Strategy
         var signals = new System.Collections.Generic.Dictionary<string, float>
@@ -516,7 +514,7 @@ public static partial class Program
         }
 
         // Execute SharpScripts
-        System.Collections.Generic.List<Omnijure.Core.Scripting.ScriptOutput>? scriptOutputs = null;
+        System.Collections.Generic.List<Omnijure.Core.Features.Scripting.ScriptOutput>? scriptOutputs = null;
         if (activeTab.Scripts.Count > 0 && activeTab.Buffer.Count > 0)
         {
             scriptOutputs = activeTab.Scripts.ExecuteAll(activeTab.Buffer);
@@ -634,7 +632,7 @@ public static partial class Program
             case "script_open":
                 try
                 {
-                    var scriptsDir = Omnijure.Core.Scripting.ScriptManager.GetScriptsDirectory();
+                    var scriptsDir = Omnijure.Core.Features.Scripting.ScriptManager.GetScriptsDirectory();
                     var files = System.IO.Directory.GetFiles(scriptsDir, "*.ss");
                     if (files.Length > 0)
                         activeTab.Scripts.LoadFromFile(files[^1]); // Load most recent
@@ -649,7 +647,7 @@ public static partial class Program
                         var script = activeTab.Scripts.Scripts[idx];
                         var savePath = script.FilePath
                             ?? System.IO.Path.Combine(
-                                Omnijure.Core.Scripting.ScriptManager.GetScriptsDirectory(),
+                                Omnijure.Core.Features.Scripting.ScriptManager.GetScriptsDirectory(),
                                 $"{script.Name}.ss");
                         activeTab.Scripts.SaveToFile(idx, savePath);
                     }

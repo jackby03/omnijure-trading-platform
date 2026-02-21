@@ -5,7 +5,7 @@ using Moq;
 using Xunit;
 using Omnijure.Core.Features.Settings.Api;
 using Omnijure.Core.Features.Settings.Model;
-using Omnijure.Core.Security;
+using Omnijure.Core.Shared.Infrastructure.Security;
 
 namespace Omnijure.Core.Tests.Settings;
 

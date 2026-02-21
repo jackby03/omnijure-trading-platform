@@ -1,0 +1,17 @@
+global using Omnijure.Visual.Shared.UI.Rendering;
+global using Omnijure.Visual.Shared.Lib.Drawing;
+global using Omnijure.Core.Shared.Infrastructure.EventBus;
+global using Omnijure.Core.Shared.Lib.Math;
+global using Omnijure.Core.Shared.Lib.DataStructures;
+global using Omnijure.Core.Entities.MarketData;
+global using Omnijure.Core.Entities.Exchange;
+global using Omnijure.Core.Features.Scripting;
+global using Omnijure.Visual.App;
+global using Omnijure.Visual.Features.Charting;
+global using Omnijure.Visual.Features.Search;
+global using Omnijure.Visual.Features.Settings;
+global using Omnijure.Visual.Rendering;
+global using Omnijure.Visual.Shared.UI.Components;
+global using Omnijure.Visual.Widgets.Panels;
+global using Omnijure.Visual.Widgets.Sidebars;
+global using Omnijure.Visual.Widgets.Toolbars;

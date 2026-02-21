@@ -10,7 +10,7 @@
     <WindowsPackageType>None</WindowsPackageType>
     <Platforms>AnyCPU;x64</Platforms>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
+    <ApplicationIcon>Shared\UI\Assets\logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Assets\logo.svg" />
+    <EmbeddedResource Include="Shared\UI\Assets\logo.svg" />
   </ItemGroup>
 
 </Project>

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Omnijure.Core.Security;
+using Omnijure.Core.Shared.Infrastructure.Security;
 
 using Omnijure.Core.Features.Settings.Model;
 
