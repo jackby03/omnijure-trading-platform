@@ -1,6 +1,8 @@
 using System;
 
-namespace Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings.Model;
+
+namespace Omnijure.Core.Features.Settings.Api;
 
 public interface ISettingsProvider
 {

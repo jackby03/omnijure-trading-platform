@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using Omnijure.Core.Security;
-using Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings;
+using Omnijure.Core.Features.Settings.Api;
+using Omnijure.Core.Features.Settings.Model;
 using Omnijure.Core.Network;
 using Omnijure.Visual.Rendering;
 
@@ -14,7 +16,7 @@ public static class ApplicationBootstrapper
     {
         var services = new ServiceCollection();
         services.AddSingleton<ICryptographyService, WindowsDpapiCryptographyService>();
-        services.AddSingleton<ISettingsProvider, SettingsManager>();
+        services.AddSettingsFeature();
         services.AddSingleton<IExchangeClientFactory, BinanceClientFactory>();
         services.AddSingleton<Omnijure.Core.Events.IEventBus, Omnijure.Core.Events.EventBus>();
 

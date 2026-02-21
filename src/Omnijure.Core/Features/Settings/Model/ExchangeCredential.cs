@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Omnijure.Core.Settings;
+namespace Omnijure.Core.Features.Settings.Model;
 
 public enum ExchangeType
 {

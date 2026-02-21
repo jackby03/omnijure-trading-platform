@@ -1,4 +1,5 @@
-using Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings.Api;
+using Omnijure.Core.Features.Settings.Model;
 using Omnijure.Core.Scripting;
 using Omnijure.Visual;
 using SkiaSharp;

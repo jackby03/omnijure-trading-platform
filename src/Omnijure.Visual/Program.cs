@@ -7,7 +7,8 @@ using Omnijure.Visual.Rendering;
 using Omnijure.Visual.Input;
 using Omnijure.Core.DataStructures;
 using Omnijure.Core.Network;
-using Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings.Api;
+using Omnijure.Core.Features.Settings.Model;
 
 using System.Linq;
 using System.Text.Json;

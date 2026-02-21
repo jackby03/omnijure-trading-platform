@@ -3,9 +3,11 @@ using System.Text;
 using System.Text.Json;
 using Omnijure.Core.Security;
 
-namespace Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings.Model;
 
-public class SettingsManager : ISettingsProvider
+namespace Omnijure.Core.Features.Settings.Api;
+
+internal class SettingsManager : ISettingsProvider
 {
     private readonly ICryptographyService _crypto;
 

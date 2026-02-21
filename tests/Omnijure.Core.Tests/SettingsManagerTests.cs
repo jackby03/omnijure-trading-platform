@@ -3,7 +3,8 @@ using System.IO;
 using System.Text.Json;
 using Moq;
 using Xunit;
-using Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings.Api;
+using Omnijure.Core.Features.Settings.Model;
 using Omnijure.Core.Security;
 
 namespace Omnijure.Core.Tests.Settings;

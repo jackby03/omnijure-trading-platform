@@ -1,4 +1,5 @@
-using Omnijure.Core.Settings;
+using Omnijure.Core.Features.Settings.Api;
+using Omnijure.Core.Features.Settings.Model;
 using System.Collections.Generic;
 using System.Linq;
 

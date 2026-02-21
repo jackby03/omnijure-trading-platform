@@ -1,4 +1,4 @@
-namespace Omnijure.Core.Settings;
+namespace Omnijure.Core.Features.Settings.Model;
 
 public class AppSettings
 {
