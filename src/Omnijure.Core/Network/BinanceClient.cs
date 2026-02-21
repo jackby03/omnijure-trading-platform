@@ -9,7 +9,7 @@ using Omnijure.Core.DataStructures;
 
 namespace Omnijure.Core.Network;
 
-public class BinanceClient
+public class BinanceClient : IExchangeClient
 {
     private string _currentInterval = "1m";
     private readonly string _baseUrl = "wss://stream.binance.com:9443/ws/";

@@ -16,7 +16,7 @@ public class ChartTabState
     public RingBuffer<Candle> Buffer { get; set; }
     public OrderBook OrderBook { get; set; }
     public RingBuffer<MarketTrade> Trades { get; set; }
-    public BinanceClient Connection { get; set; }
+    public IExchangeClient Connection { get; set; }
 
     // Viewport
     public float Zoom { get; set; } = 1.0f;
@@ -41,14 +41,14 @@ public class ChartTabState
         plot(s50, "SMA(50)", color=#00BCD4)
         """;
 
-    public ChartTabState(string symbol, string timeframe)
+    public ChartTabState(string symbol, string timeframe, IExchangeClientFactory exchangeFactory)
     {
         Symbol = symbol;
         Timeframe = timeframe;
         Buffer = new RingBuffer<Candle>(4096);
         OrderBook = new OrderBook();
         Trades = new RingBuffer<MarketTrade>(1024);
-        Connection = new BinanceClient(Buffer, OrderBook, Trades);
+        Connection = exchangeFactory.Create(Buffer, OrderBook, Trades);
 
         // Add default indicator script
         Scripts.AddScript(DefaultScript, "Moving Averages");

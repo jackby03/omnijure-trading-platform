@@ -1,11 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Omnijure.Core.Security;
 
 namespace Omnijure.Core.Settings;
 
-public class SettingsManager
+public class SettingsManager : ISettingsProvider
 {
+    private readonly ICryptographyService _crypto;
+
     private static readonly string SettingsDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OmnijureTDS");
 
@@ -18,6 +21,11 @@ public class SettingsManager
     };
 
     public AppSettings Current { get; private set; } = new();
+
+    public SettingsManager(ICryptographyService crypto)
+    {
+        _crypto = crypto;
+    }
 
     public void Load()
     {
@@ -67,9 +75,9 @@ public class SettingsManager
         foreach (var cred in Current.Exchange.Credentials)
         {
             if (!string.IsNullOrEmpty(cred.ApiKey))
-                cred.EncryptedApiKey = Encrypt(cred.ApiKey);
+                cred.EncryptedApiKey = _crypto.Encrypt(cred.ApiKey);
             if (!string.IsNullOrEmpty(cred.Secret))
-                cred.EncryptedSecret = Encrypt(cred.Secret);
+                cred.EncryptedSecret = _crypto.Encrypt(cred.Secret);
         }
     }
 
@@ -80,9 +88,9 @@ public class SettingsManager
             try
             {
                 if (!string.IsNullOrEmpty(cred.EncryptedApiKey))
-                    cred.ApiKey = Decrypt(cred.EncryptedApiKey);
+                    cred.ApiKey = _crypto.Decrypt(cred.EncryptedApiKey);
                 if (!string.IsNullOrEmpty(cred.EncryptedSecret))
-                    cred.Secret = Decrypt(cred.EncryptedSecret);
+                    cred.Secret = _crypto.Decrypt(cred.EncryptedSecret);
             }
             catch
             {
@@ -110,21 +118,5 @@ public class SettingsManager
         var idx = Current.Exchange.Credentials.FindIndex(c => c.Id == updated.Id);
         if (idx >= 0)
             Current.Exchange.Credentials[idx] = updated;
-    }
-
-    public static string Encrypt(string plaintext)
-    {
-        if (string.IsNullOrEmpty(plaintext)) return "";
-        var bytes = Encoding.UTF8.GetBytes(plaintext);
-        var encrypted = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
-        return Convert.ToBase64String(encrypted);
-    }
-
-    public static string Decrypt(string encrypted)
-    {
-        if (string.IsNullOrEmpty(encrypted)) return "";
-        var bytes = Convert.FromBase64String(encrypted);
-        var decrypted = ProtectedData.Unprotect(bytes, null, DataProtectionScope.CurrentUser);
-        return Encoding.UTF8.GetString(decrypted);
     }
 }

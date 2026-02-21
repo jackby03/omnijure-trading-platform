@@ -7,6 +7,12 @@ public class ChartTabManager
 {
     private readonly List<ChartTabState> _tabs = new();
     private int _activeIndex;
+    private readonly Omnijure.Core.Network.IExchangeClientFactory _exchangeFactory;
+
+    public ChartTabManager(Omnijure.Core.Network.IExchangeClientFactory exchangeFactory)
+    {
+        _exchangeFactory = exchangeFactory;
+    }
 
     public const int TabBarHeight = 28;
 
@@ -17,7 +23,7 @@ public class ChartTabManager
 
     public ChartTabState AddTab(string symbol = "BTCUSDT", string timeframe = "1m")
     {
-        var tab = new ChartTabState(symbol, timeframe);
+        var tab = new ChartTabState(symbol, timeframe, _exchangeFactory);
         _tabs.Add(tab);
         _activeIndex = _tabs.Count - 1;
         _ = tab.Connection.ConnectAsync(symbol, timeframe);

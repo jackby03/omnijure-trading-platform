@@ -11,6 +11,7 @@ using Omnijure.Core.Settings;
 using System.Linq;
 using System.Text.Json;
 using Silk.NET.Input;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Omnijure.Visual;
 
@@ -26,7 +27,7 @@ public static partial class Program
     private static SearchModalRenderer _searchModalRenderer;
     private static SettingsModalRenderer _settingsModalRenderer;
     private static UiSettingsModal _settingsModal;
-    private static SettingsManager _settings;
+    private static ISettingsProvider _settings;
     private static Omnijure.Mind.ScriptEngine _mind;
     
     // Chart Tabs
@@ -167,12 +168,20 @@ public static partial class Program
         _settingsModalRenderer = new SettingsModalRenderer();
         _settingsModal = new UiSettingsModal();
 
+        // Setup Dependency Injection
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        services.AddSingleton<Omnijure.Core.Security.ICryptographyService, Omnijure.Core.Security.WindowsDpapiCryptographyService>();
+        services.AddSingleton<ISettingsProvider, SettingsManager>();
+        services.AddSingleton<IExchangeClientFactory, BinanceClientFactory>();
+        var serviceProvider = services.BuildServiceProvider();
+
         // Load persistent settings
-        _settings = new SettingsManager();
+        _settings = serviceProvider.GetRequiredService<ISettingsProvider>();
         _settings.Load();
 
         // Initialize chart tab manager
-        _chartTabs = new ChartTabManager();
+        var exchangeFactory = serviceProvider.GetRequiredService<IExchangeClientFactory>();
+        _chartTabs = new ChartTabManager(exchangeFactory);
         _layout.SetChartTabs(_chartTabs);
 
         // Apply layout from settings
