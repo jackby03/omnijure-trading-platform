@@ -1,8 +1,80 @@
 .vs/
+
+# Build outputs
 bin/
 obj/
+
+# Visual Studio / JetBrains / Editor settings
 *.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+.vscode/
+
+# Logs
 *.log
+logs/
+*.log.*
+
+# Lock / NuGet
 *.lock
-*log*
+project.lock.json
+packages/
+.packages/
+.nuget/
+
+# Temporary files
+tmp/
+temp/
+*~
+*.swp
+
+# Local config / secrets (do not commit credentials)
+.env
+.env.*
+appsettings.*.json
+secrets.json
+*.publishsettings
+*.pfx
+
+# NuGet packages and artifacts
+*.nupkg
+*.snupkg
+
+# Test results / coverage
+TestResults/
+test-results/
+coverage/
+*.coverage
+*.trx
+coverage.xml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Database files
+*.db
+*.sqlite
+*.mdf
+*.ldf
+*.sdf
+
+# Tools and generated outputs
+/tools/**/bin/
+/tools/**/obj/
+
+# Node / front-end
+node_modules/
+dist/
+build/
+
+# Misc
+._*
+
+# Agent / local automation folders
 /.claude
+/.agent
+
