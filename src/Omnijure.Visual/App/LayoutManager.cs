@@ -33,7 +33,7 @@ public class LayoutManager
     public PanelInputHandler InputHandler { get; private set; }
 
     // Chart tab bar
-    private ChartTabManager? _chartTabs;
+    private readonly ChartTabManager _chartTabs;
     private SKRect _chartTabBarRect;
     private readonly List<(int tabIndex, SKRect rect, SKRect closeRect)> _chartTabRects = new();
     private SKRect _addTabButtonRect;
@@ -47,18 +47,18 @@ public class LayoutManager
     public bool IsResizingLeft => false;
     public bool IsResizingRight => false;
 
-    public void SetChartTabs(ChartTabManager tabs) => _chartTabs = tabs;
-
     public LayoutManager(
         PanelSystem panelSystem,
         PanelSystemRenderer panelSystemRenderer,
         PanelContentRenderer panelContent,
-        SidebarRenderer sidebar)
+        SidebarRenderer sidebar,
+        ChartTabManager chartTabs)
     {
         _panelSystem = panelSystem;
         _panelSystemRenderer = panelSystemRenderer;
         _panelContent = panelContent;
         _sidebar = sidebar;
+        _chartTabs = chartTabs;
 
         _leftToolbar = new LeftToolbarRenderer();
         _statusBar = new StatusBarRenderer();
@@ -192,7 +192,7 @@ public class LayoutManager
             var contentArea = chartPanel!.ContentBounds;
 
             // Render chart tab bar at the top of content area
-            bool hasTabs = _chartTabs != null && _chartTabs.Count > 0;
+            bool hasTabs = _chartTabs.Count > 0;
             float tabBarH = hasTabs ? ChartTabBarHeight : 0;
 
             if (hasTabs)
@@ -285,7 +285,7 @@ public class LayoutManager
 
     private void RenderChartTabBar(SKCanvas canvas, SKRect barRect)
     {
-        if (_chartTabs == null || _chartTabs.Count == 0) return;
+        if (_chartTabs.Count == 0) return;
 
         var paint = PaintPool.Instance.Rent();
         try
@@ -383,14 +383,13 @@ public class LayoutManager
     /// <summary>
     /// Handles mouse click on the chart tab bar. Returns true if click was consumed.
     /// </summary>
-    public bool HandleChartTabClick(float x, float y, ChartTabManager chartTabs, Action onTabSwitch)
+    public bool HandleChartTabClick(float x, float y)
     {
-        if (chartTabs == null || chartTabs.Count == 0) return false;
+        if (_chartTabs.Count == 0) return false;
 
         if (_addTabButtonRect.Contains(x, y))
         {
-            chartTabs.AddTab();
-            onTabSwitch?.Invoke();
+            _chartTabs.AddTab();
             return true;
         }
 
@@ -398,17 +397,15 @@ public class LayoutManager
         {
             if (tabRect.Contains(x, y))
             {
-                if (chartTabs.Count > 1 && closeRect.Contains(x, y))
+                if (_chartTabs.Count > 1 && closeRect.Contains(x, y))
                 {
-                    chartTabs.CloseTab(tabIndex);
-                    onTabSwitch?.Invoke();
+                    _chartTabs.CloseTab(tabIndex);
                     return true;
                 }
 
-                if (tabIndex != chartTabs.ActiveIndex)
+                if (tabIndex != _chartTabs.ActiveIndex)
                 {
-                    chartTabs.SwitchTo(tabIndex);
-                    onTabSwitch?.Invoke();
+                    _chartTabs.SwitchTo(tabIndex);
                 }
                 return true;
             }

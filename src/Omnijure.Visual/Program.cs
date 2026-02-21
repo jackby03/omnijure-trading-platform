@@ -155,6 +155,8 @@ public static partial class Program
         _eventBus = serviceProvider.GetRequiredService<Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus>();
         _chartTabs = Omnijure.Visual.App.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
 
+        _eventBus.Subscribe<Omnijure.Core.Shared.Infrastructure.EventBus.TabSwitchedEvent>(_ => SyncUiWithActiveTab());
+
         // Wire up View menu panel toggles
         _toolbar.SetPanelCallbacks(
             onTogglePanel: id => _layout.TogglePanel(id),
@@ -275,21 +277,7 @@ public static partial class Program
     {
         Console.WriteLine($"[Interface] Switching to {symbol} {interval}...");
         _chartTabs.SwitchContext(symbol, interval);
-
-        var tab = _chartTabs.ActiveTab;
-        _eventBus.Publish(new Omnijure.Core.Shared.Infrastructure.EventBus.SymbolChangedEvent(tab.Id, symbol));
-        _eventBus.Publish(new Omnijure.Core.Shared.Infrastructure.EventBus.IntervalChangedEvent(tab.Id, interval));
-
-        // Update Title
-        _window.Title = $"Omnijure - {tab.Symbol} [{tab.Timeframe}]";
-
-        // Update dropdowns selected items (don't recreate UI)
-        if (_assetDropdown != null)
-            _assetDropdown.SelectedItem = tab.Symbol;
-        if (_intervalDropdown != null)
-            _intervalDropdown.SelectedItem = tab.Timeframe;
-        if (_searchBox != null)
-            _searchBox.Placeholder = tab.Symbol;
+        SyncUiWithActiveTab();
     }
 
     /// <summary>
@@ -323,7 +311,6 @@ public static partial class Program
             HandlePanelScroll = (x, y, d) => _layout.InputHandler.HandlePanelScroll(x, y, d),
             SwitchContext = SwitchContext,
             HandleSecondaryToolbarAction = HandleSecondaryToolbarAction,
-            SyncUiWithActiveTab = SyncUiWithActiveTab,
             HandleDrawingToolClick = HandleDrawingToolClick,
             GetWindowSize = () => _window.Size,
             GetWindowPosition = () => _window.Position

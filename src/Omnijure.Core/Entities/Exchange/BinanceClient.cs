@@ -32,16 +32,9 @@ public class BinanceClient : IExchangeClient
         _orderBook = orderBook;
         _trades = trades;
 
-        _eventBus.Subscribe<SymbolChangedEvent>(e => {
-            if (e.TargetId == _clientId) {
-                _ = ConnectAsync(e.NewSymbol, _currentInterval);
-            }
-        });
-
-        _eventBus.Subscribe<IntervalChangedEvent>(e => {
-            if (e.TargetId == _clientId) {
-                _ = ConnectAsync(_currentSymbol, e.NewInterval);
-            }
+        _eventBus.Subscribe<ContextChangedEvent>(e => {
+            if (e.TargetId == _clientId)
+                _ = ConnectAsync(e.NewSymbol, e.NewInterval);
         });
     }
     public async Task ConnectAsync(string symbol = "BTCUSDT", string interval = "1m")

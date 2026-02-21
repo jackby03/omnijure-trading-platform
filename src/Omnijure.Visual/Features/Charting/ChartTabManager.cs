@@ -1,18 +1,18 @@
-using Omnijure.Core.Features.Settings.Api;
 using Omnijure.Core.Features.Settings.Model;
-using Omnijure.Visual.Rendering;
 
-namespace Omnijure.Visual;
+namespace Omnijure.Visual.Features.Charting;
 
 public class ChartTabManager
 {
     private readonly List<ChartTabState> _tabs = new();
     private int _activeIndex;
-    private readonly Omnijure.Core.Entities.Exchange.IExchangeClientFactory _exchangeFactory;
+    private readonly IExchangeClientFactory _exchangeFactory;
+    private readonly IEventBus _eventBus;
 
-    public ChartTabManager(Omnijure.Core.Entities.Exchange.IExchangeClientFactory exchangeFactory)
+    public ChartTabManager(IExchangeClientFactory exchangeFactory, IEventBus eventBus)
     {
         _exchangeFactory = exchangeFactory;
+        _eventBus = eventBus;
     }
 
     public const int TabBarHeight = 28;
@@ -28,6 +28,7 @@ public class ChartTabManager
         _tabs.Add(tab);
         _activeIndex = _tabs.Count - 1;
         _ = tab.Connection.ConnectAsync(symbol, timeframe);
+        PublishTabSwitched(tab);
         return tab;
     }
 
@@ -45,12 +46,21 @@ public class ChartTabManager
             _activeIndex = _tabs.Count - 1;
         else if (_activeIndex > index)
             _activeIndex--;
+
+        PublishTabSwitched(ActiveTab);
     }
 
     public void SwitchTo(int index)
     {
         if (index < 0 || index >= _tabs.Count) return;
         _activeIndex = index;
+        PublishTabSwitched(ActiveTab);
+    }
+
+    private void PublishTabSwitched(ChartTabState tab)
+    {
+        if (tab != null)
+            _eventBus.Publish(new TabSwitchedEvent(tab.Id, tab.Symbol, tab.Timeframe));
     }
 
     /// <summary>
@@ -76,6 +86,8 @@ public class ChartTabManager
         tab.DrawingState.Objects.Clear();
         tab.DrawingState.CurrentDrawing = null;
         tab.DrawingState.ActiveTool = Omnijure.Visual.Shared.Lib.Drawing.DrawingTool.None;
+
+        _eventBus.Publish(new ContextChangedEvent(tab.Id, symbol, timeframe));
     }
 
     /// <summary>

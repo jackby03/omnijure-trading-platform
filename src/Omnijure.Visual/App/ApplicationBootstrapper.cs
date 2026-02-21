@@ -34,6 +34,7 @@ public static class ApplicationBootstrapper
         }
         
         services.AddSingleton<PanelContentRenderer>();
+        services.AddSingleton<ChartTabManager>();
         services.AddSingleton<LayoutManager>();
 
         return services.BuildServiceProvider();
@@ -44,9 +45,7 @@ public static class ApplicationBootstrapper
         var settings = provider.GetRequiredService<ISettingsProvider>();
         settings.Load();
 
-        var exchangeFactory = provider.GetRequiredService<IExchangeClientFactory>();
-        var chartTabs = new ChartTabManager(exchangeFactory);
-        layout.SetChartTabs(chartTabs);
+        var chartTabs = provider.GetRequiredService<ChartTabManager>();
 
         // Apply layout from settings
         if (settings.Current.Layout.Panels.Count > 0)

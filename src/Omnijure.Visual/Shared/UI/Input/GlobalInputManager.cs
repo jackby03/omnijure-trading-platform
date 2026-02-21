@@ -15,7 +15,6 @@ public class GlobalInputManager
     public Action<float, float, float> HandlePanelScroll { get; set; } = (_, _, _) => { };
     public Action<string, string> SwitchContext { get; set; } = (_, _) => { };
     public Action<string> HandleSecondaryToolbarAction { get; set; } = _ => { };
-    public Action SyncUiWithActiveTab { get; set; } = () => { };
     public Action HandleDrawingToolClick { get; set; } = () => { };
     public Func<Vector2D<int>> GetWindowSize { get; set; } = () => default;
     public Func<Vector2D<int>> GetWindowPosition { get; set; } = () => default;
@@ -187,7 +186,7 @@ public class GlobalInputManager
                 _layout.InputHandler.IsScriptEditorFocused = false;
 
             // Chart tab bar click
-            if (_layout.HandleChartTabClick(MousePos.X, MousePos.Y, _chartTabs, () => SyncUiWithActiveTab?.Invoke()))
+            if (_layout.HandleChartTabClick(MousePos.X, MousePos.Y))
                 return;
 
             // Check for left toolbar (drawing tools) click

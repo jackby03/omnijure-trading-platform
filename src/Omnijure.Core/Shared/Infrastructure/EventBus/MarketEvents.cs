@@ -1,25 +1,29 @@
 namespace Omnijure.Core.Shared.Infrastructure.EventBus;
 
-public class SymbolChangedEvent
+public class ContextChangedEvent
 {
     public string TargetId { get; }
     public string NewSymbol { get; }
-    
-    public SymbolChangedEvent(string targetId, string newSymbol)
+    public string NewInterval { get; }
+
+    public ContextChangedEvent(string targetId, string newSymbol, string newInterval)
     {
         TargetId = targetId;
         NewSymbol = newSymbol;
+        NewInterval = newInterval;
     }
 }
 
-public class IntervalChangedEvent
+public class TabSwitchedEvent
 {
-    public string TargetId { get; }
-    public string NewInterval { get; }
-    
-    public IntervalChangedEvent(string targetId, string newInterval)
+    public string TabId { get; }
+    public string Symbol { get; }
+    public string Timeframe { get; }
+
+    public TabSwitchedEvent(string tabId, string symbol, string timeframe)
     {
-        TargetId = targetId;
-        NewInterval = newInterval;
+        TabId = tabId;
+        Symbol = symbol;
+        Timeframe = timeframe;
     }
 }

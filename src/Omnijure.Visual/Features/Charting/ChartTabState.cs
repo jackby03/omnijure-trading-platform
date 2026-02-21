@@ -1,6 +1,4 @@
-using Omnijure.Visual.Rendering;
-
-namespace Omnijure.Visual;
+namespace Omnijure.Visual.Features.Charting;
 
 public class ChartTabState
 {
