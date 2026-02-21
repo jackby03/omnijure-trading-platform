@@ -22,13 +22,15 @@ public static class ApplicationBootstrapper
         services.AddSingleton<Omnijure.Visual.Rendering.PanelSystem>();
         services.AddSingleton<Omnijure.Visual.Rendering.PanelSystemRenderer>();
         services.AddSingleton<SidebarRenderer>();
-        // Renderers
-        services.AddSingleton<Omnijure.Visual.Panels.IPanelRenderer, Omnijure.Visual.Panels.AIAssistantRenderer>();
-        services.AddSingleton<Omnijure.Visual.Panels.IPanelRenderer, Omnijure.Visual.Panels.PortfolioRenderer>();
-        services.AddSingleton<Omnijure.Visual.Panels.IPanelRenderer, Omnijure.Visual.Panels.PositionsRenderer>();
-        services.AddSingleton<Omnijure.Visual.Panels.IPanelRenderer, Omnijure.Visual.Panels.AlertsRenderer>();
-        services.AddSingleton<Omnijure.Visual.Panels.IPanelRenderer, Omnijure.Visual.Panels.ConsoleRenderer>();
-        services.AddSingleton<Omnijure.Visual.Panels.IPanelRenderer, Omnijure.Visual.Panels.ScriptEditorRenderer>();
+        // Renderers: Dynamically discover and register all UI Panels
+        var panelRendererType = typeof(Omnijure.Visual.Panels.IPanelRenderer);
+        var panelTypes = typeof(ApplicationBootstrapper).Assembly.GetTypes()
+            .Where(p => panelRendererType.IsAssignableFrom(p) && !p.IsInterface && !p.IsAbstract);
+
+        foreach (var type in panelTypes)
+        {
+            services.AddSingleton(panelRendererType, type);
+        }
         
         services.AddSingleton<PanelContentRenderer>();
         services.AddSingleton<LayoutManager>();

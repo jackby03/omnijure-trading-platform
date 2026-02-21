@@ -17,4 +17,7 @@
       <Platform Solution="*|x64" Project="x64" />
     </Project>
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Omnijure.Core.Tests/Omnijure.Core.Tests.csproj" />
+  </Folder>
 </Solution>
