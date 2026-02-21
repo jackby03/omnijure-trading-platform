@@ -1,9 +1,10 @@
-﻿
+
 using Silk.NET.Windowing;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL; // Raw GL
 using SkiaSharp;
 using Omnijure.Visual.Rendering;
+using Omnijure.Visual.Input;
 using Omnijure.Core.DataStructures;
 using Omnijure.Core.Network;
 using Omnijure.Core.Settings;
@@ -23,6 +24,7 @@ public static partial class Program
     private static SKSurface _surface;
     private static ChartRenderer _renderer;
     private static LayoutManager _layout;
+    private static GlobalInputManager _inputManager;
     private static ToolbarRenderer _toolbar;
     private static SearchModalRenderer _searchModalRenderer;
     private static SettingsModalRenderer _settingsModalRenderer;
@@ -82,21 +84,7 @@ public static partial class Program
 
     private static void OnLoad()
     {
-        // 0. Input Setup
-        var input = _window.CreateInput();
-        foreach (var keyboard in input.Keyboards)
-        {
-            keyboard.KeyDown += OnKeyDown;
-            keyboard.KeyChar += OnKeyChar;
-        }
-        
-        foreach (var mouse in input.Mice)
-        {
-            mouse.Scroll += OnScroll;
-            mouse.MouseDown += OnMouseDown;
-            mouse.MouseUp += OnMouseUp;
-            mouse.MouseMove += OnMouseMove;
-        }
+        // Input Setup deferred to SetupInput()
 
         // 1. Init Raw GL
         _gl = _window.CreateOpenGL();
@@ -154,7 +142,6 @@ public static partial class Program
         
         
         _renderer = new ChartRenderer();
-        _layout = new LayoutManager();
         _toolbar = new ToolbarRenderer();
         _toolbar.SetWindowActions(
             onClose: () => _window.Close(),
@@ -168,32 +155,11 @@ public static partial class Program
         _settingsModalRenderer = new SettingsModalRenderer();
         _settingsModal = new UiSettingsModal();
 
-        // Setup Dependency Injection
-        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-        services.AddSingleton<Omnijure.Core.Security.ICryptographyService, Omnijure.Core.Security.WindowsDpapiCryptographyService>();
-        services.AddSingleton<ISettingsProvider, SettingsManager>();
-        services.AddSingleton<IExchangeClientFactory, BinanceClientFactory>();
-        var serviceProvider = services.BuildServiceProvider();
-
-        // Load persistent settings
+        // 3. Application Bootstrapper
+        var serviceProvider = Omnijure.Visual.Core.ApplicationBootstrapper.ConfigureServices();
+        _layout = serviceProvider.GetRequiredService<LayoutManager>();
         _settings = serviceProvider.GetRequiredService<ISettingsProvider>();
-        _settings.Load();
-
-        // Initialize chart tab manager
-        var exchangeFactory = serviceProvider.GetRequiredService<IExchangeClientFactory>();
-        _chartTabs = new ChartTabManager(exchangeFactory);
-        _layout.SetChartTabs(_chartTabs);
-
-        // Apply layout from settings
-        if (_settings.Current.Layout.Panels.Count > 0)
-        {
-            _layout.ImportLayout(_settings.Current.Layout.Panels);
-            _layout.ImportActiveTabs(
-                _settings.Current.Layout.ActiveBottomTab,
-                _settings.Current.Layout.ActiveLeftTab,
-                _settings.Current.Layout.ActiveRightTab,
-                _settings.Current.Layout.ActiveCenterTab);
-        }
+        _chartTabs = Omnijure.Visual.Core.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
 
         // Wire up View menu panel toggles
         _toolbar.SetPanelCallbacks(
@@ -225,23 +191,7 @@ public static partial class Program
             _layout.ImportLayout(new List<PanelState>()); // Will use PanelDefinitions defaults
         };
 
-        // 4. REAL DATA (The Metal) — Restore tabs from settings or create default
-        if (_settings.Current.Chart.Tabs.Count > 0)
-        {
-            foreach (var saved in _settings.Current.Chart.Tabs)
-            {
-                var tab = _chartTabs.AddTab(saved.Symbol, saved.Timeframe);
-                if (Enum.TryParse<ChartType>(saved.ChartType, out var ct))
-                    tab.ChartType = ct;
-                tab.Zoom = saved.Zoom;
-            }
-            _chartTabs.SwitchTo(Math.Clamp(_settings.Current.Chart.ActiveTabIndex, 0, _chartTabs.Count - 1));
-        }
-        else
-        {
-            _chartTabs.AddTab(_settings.Current.Chart.DefaultSymbol, _settings.Current.Chart.DefaultTimeframe);
-        }
-        
+
         // 3. Init Mind
         try {
             Environment.SetEnvironmentVariable("CLOJURE_LOAD_PATH", AppDomain.CurrentDomain.BaseDirectory);
@@ -276,6 +226,8 @@ public static partial class Program
                 await Task.Delay(5000);
             }
         });
+
+        SetupInput();
     }
 
     private static void SetupUi()
@@ -364,440 +316,41 @@ public static partial class Program
             _searchBox.Placeholder = tab.Symbol;
     }
 
-    private static void OnScroll(IMouse arg1, ScrollWheel arg2)
+    private static void SetupInput()
     {
-        // Settings modal consumes all scroll
-        if (_settingsModal != null && _settingsModal.IsVisible) return;
-
-        // Search modal has highest priority
-        if (_searchModal != null && _searchModal.IsVisible)
+        _inputManager = new Omnijure.Visual.Input.GlobalInputManager(
+            _layout, _chartTabs, _toolbar, _settingsModal, _settingsModalRenderer,
+            _searchModal, _searchBox, _assetDropdown, _uiDropdowns, _uiButtons
+        )
         {
-            float delta = -arg2.Y * 2; // Scroll sensitivity
-            int totalResults = _searchModal.GetTotalResultCount();
-            if (totalResults > _searchModal.MaxVisibleResults)
-            {
-                _searchModal.ScrollOffset = Math.Max(0, Math.Min(totalResults - _searchModal.MaxVisibleResults, _searchModal.ScrollOffset + (int)delta));
-            }
-            return;
-        }
-        
-        var openDd = _uiDropdowns.FirstOrDefault(d => d.IsOpen);
-        if (openDd != null)
+            HandleToolbarClick = (x, y) => { _layout.HandleToolbarClick(x, y); },
+            HandlePanelScroll = (x, y, d) => _layout.InputHandler.HandlePanelScroll(x, y, d),
+            SwitchContext = SwitchContext,
+            HandleSecondaryToolbarAction = HandleSecondaryToolbarAction,
+            SyncUiWithActiveTab = SyncUiWithActiveTab,
+            HandleDrawingToolClick = HandleDrawingToolClick,
+            GetWindowSize = () => _window.Size,
+            GetWindowPosition = () => _window.Position
+        };
+
+        var input = _window.CreateInput();
+        foreach (var keyboard in input.Keyboards)
         {
-            float delta = -arg2.Y; 
-            var filtered = openDd.GetFilteredItems();
-            openDd.ScrollOffset = Math.Max(0, Math.Min(filtered.Count - openDd.MaxVisibleItems, openDd.ScrollOffset + delta));
-            return;
+            keyboard.KeyDown += _inputManager.OnKeyDown;
+            keyboard.KeyChar += _inputManager.OnKeyChar;
         }
-
-        // Panel scroll (Portfolio, Positions, AI Assistant, Alerts, Console, etc.)
-        if (_layout.HandlePanelScroll(_mousePos.X, _mousePos.Y, arg2.Y))
-            return;
-
-        // Scroll on price axis = vertical price scale (like TradingView)
-        var tab = _chartTabs.ActiveTab;
-        if (_layout.GetPriceAxisRect().Contains(_mousePos.X, _mousePos.Y))
+        foreach (var mouse in input.Mice)
         {
-            tab.AutoScaleY = false;
-            float factor = arg2.Y > 0 ? 0.9f : 1.1f;
-            float mid = (tab.ViewMinY + tab.ViewMaxY) / 2.0f;
-            float range = (tab.ViewMaxY - tab.ViewMinY) * factor;
-            if (range < 0.00001f) range = 0.00001f;
-            tab.ViewMinY = mid - range / 2.0f;
-            tab.ViewMaxY = mid + range / 2.0f;
-            return;
+            mouse.Scroll += _inputManager.OnScroll;
+            mouse.MouseDown += _inputManager.OnMouseDown;
+            mouse.MouseUp += _inputManager.OnMouseUp;
+            mouse.MouseMove += (m, p) =>
+            {
+                _inputManager.OnMouseMove(m, p);
+                // Hover effects
+                foreach(var btn in _uiButtons) btn.IsHovered = btn.Contains(p.X, p.Y);
+            };
         }
-
-        if (arg2.Y > 0) tab.Zoom *= 1.1f;
-        else tab.Zoom *= 0.9f;
-        tab.Zoom = Math.Clamp(tab.Zoom, 0.05f, 50.0f);
-    }
-
-    private static void OnMouseDown(IMouse arg1, MouseButton arg2) 
-    { 
-        if (arg2 == MouseButton.Left)
-        {
-            // Settings modal (highest priority)
-            if (_settingsModal != null && _settingsModal.IsVisible)
-            {
-                bool inside = _settingsModalRenderer.HandleMouseDown(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y, _settingsModal);
-                if (!inside)
-                {
-                    _settingsModal.Close();
-                }
-                else if (_settingsModalRenderer.IsSaveClicked(_mousePos.X, _mousePos.Y))
-                {
-                    // Apply settings and save
-                    _settingsModal.SaveToSettings(_settings.Current);
-                    _settings.Save();
-                    _settingsModal.HasUnsavedChanges = false;
-                    _settingsModal.Close();
-                }
-                return;
-            }
-
-            // Check if modal is visible and handle clicks
-            if (_searchModal != null && _searchModal.IsVisible)
-            {
-                // Calculate modal bounds
-                float modalWidth = Math.Min(600, _window.Size.X - 80);
-                float modalHeight = Math.Min(700, _window.Size.Y - 100);
-                float modalX = (_window.Size.X - modalWidth) / 2;
-                float modalY = (_window.Size.Y - modalHeight) / 2 - 50;
-                
-                // Check if click is inside modal
-                if (_mousePos.X >= modalX && _mousePos.X <= modalX + modalWidth &&
-                    _mousePos.Y >= modalY && _mousePos.Y <= modalY + modalHeight)
-                {
-                    // Calculate search box area
-                    float searchBoxY = modalY + 84; 
-                    if (_mousePos.Y >= searchBoxY && _mousePos.Y <= searchBoxY + 44)
-                    {
-                        // Clicked inside search box area
-                        // If they click on the right side, maybe clear?
-                        if (_mousePos.X > modalX + modalWidth - 60)
-                        {
-                            _searchModal.Clear();
-                        }
-                        return; // Consume
-                    }
-
-                    // Calculate tab click area
-                    float tabStartY = modalY + 142; // y after search box spacer
-                    if (_mousePos.Y >= tabStartY && _mousePos.Y <= tabStartY + 30)
-                    {
-                        float tabX = modalX + 24;
-                        string[] categories = Enum.GetNames(typeof(AssetCategory));
-                        using var font = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 11);
-                        for (int i = 0; i < categories.Length; i++)
-                        {
-                            string catLabel = categories[i];
-                            float labelWidth = font.MeasureText(catLabel) + 20;
-                            if (_mousePos.X >= tabX && _mousePos.X <= tabX + labelWidth)
-                            {
-                                _searchModal.SelectedCategory = (AssetCategory)i;
-                                _searchModal.UpdateFilteredResults();
-                                return;
-                            }
-                            tabX += labelWidth + 10;
-                        }
-                        return; // Consume click in tab row area
-                    }
-
-                    // Calculate item click area (starts after all header elements)
-                    float itemStartY = modalY + 142 + 38 + 18 + 18; // Updated for tabs
-                    float itemHeight = 48;
-                    
-                    if (_mousePos.Y >= itemStartY)
-                    {
-                        int clickedIndex = (int)((_mousePos.Y - itemStartY) / (itemHeight + 2));
-                        int globalIndex = _searchModal.ScrollOffset + clickedIndex;
-                        
-                        if (globalIndex >= 0 && globalIndex < _searchModal.GetTotalResultCount())
-                        {
-                            _searchModal.SelectedIndex = globalIndex;
-                            var selected = _searchModal.GetSelectedSymbol();
-                            if (!string.IsNullOrEmpty(selected))
-                            {
-                                SwitchContext(selected, _chartTabs.ActiveTab.Timeframe);
-                                _searchModal.IsVisible = false;
-                                _searchModal.Clear();
-                            }
-                        }
-                    }
-                    return; // Consume click inside modal
-                }
-                else
-                {
-                    // Click outside modal - close it
-                    _searchModal.IsVisible = false;
-                    _searchModal.Clear();
-                    return;
-                }
-            }
-            
-            // Check search box first - open modal instead of focusing
-            if (_searchBox != null && _searchBox.Contains(_mousePos.X, _mousePos.Y))
-            {
-                if (_searchModal != null)
-                {
-                    _searchModal.IsVisible = true;
-                    _searchModal.Clear();
-                }
-                return;
-            }
-            
-            // Window resize from edges (must check before toolbar)
-            if (_toolbar.TryStartResize(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y))
-                return;
-
-            // Window control buttons (close, maximize, minimize, drag)
-            if (_toolbar.HandleMouseDown(_mousePos.X, _mousePos.Y, _window.Position.X, _window.Position.Y))
-                return;
-
-            // Secondary toolbar click
-            var secondaryBtnId = _layout.HandleSecondaryToolbarClick(_mousePos.X, _mousePos.Y);
-            if (secondaryBtnId != null)
-            {
-                HandleSecondaryToolbarAction(secondaryBtnId);
-                return;
-            }
-
-            UiDropdown clickedDd = null;
-            foreach(var dd in _uiDropdowns)
-            {
-                if (dd.IsOpen)
-                {
-                    var filtered = dd.GetFilteredItems();
-                    for (int i = 0; i < filtered.Count; i++)
-                    {
-                        if (dd.ContainsItem(_mousePos.X, _mousePos.Y, i))
-                        {
-                            dd.SelectedItem = filtered[i];
-                            dd.OnSelected?.Invoke(dd.SelectedItem);
-                            dd.IsOpen = false;
-                            dd.SearchQuery = "";
-                            dd.ScrollOffset = 0;
-                            return;
-                        }
-                    }
-                }
-                
-                if (dd.Contains(_mousePos.X, _mousePos.Y))
-                    clickedDd = dd;
-            }
-
-            if (clickedDd != null)
-            {
-                clickedDd.IsOpen = !clickedDd.IsOpen;
-                if (clickedDd.IsOpen) { clickedDd.SearchQuery = ""; clickedDd.ScrollOffset = 0; }
-                foreach(var other in _uiDropdowns) if (other != clickedDd) other.IsOpen = false;
-                return;
-            }
-
-            // Close all if clicked away
-            foreach(var dd in _uiDropdowns) 
-            {
-                if (dd.IsOpen) { dd.IsOpen = false; dd.SearchQuery = ""; dd.ScrollOffset = 0; }
-            }
-
-            foreach(var btn in _uiButtons)
-            {
-                if (btn.Contains(_mousePos.X, _mousePos.Y))
-                {
-                    btn.Action?.Invoke();
-                    return;
-                }
-            }
-
-            // Script editor click (tab bar, code area)
-            if (_layout.HandleScriptEditorClick(_mousePos.X, _mousePos.Y))
-                return;
-
-            // Unfocus script editor if clicking elsewhere
-            if (_layout.IsScriptEditorFocused)
-                _layout.IsScriptEditorFocused = false;
-
-            // Chart tab bar click (before other chart interactions)
-            if (_layout.HandleChartTabClick(_mousePos.X, _mousePos.Y, _chartTabs, () => SyncUiWithActiveTab()))
-                return;
-
-            // Check for left toolbar (drawing tools) click
-            var clickedTool = _layout.HandleToolbarClick(_mousePos.X, _mousePos.Y);
-            if (clickedTool.HasValue)
-            {
-                _chartTabs.ActiveTab.DrawingState.ActiveTool = clickedTool.Value;
-                return;
-            }
-
-            // Check chart interactions BEFORE panel system (so panel edge resize doesn't steal chart pan)
-            if (_layout.GetPriceAxisRect().Contains(_mousePos.X, _mousePos.Y))
-            {
-                _isResizingPrice = true;
-                _chartTabs.ActiveTab.AutoScaleY = false;
-                return;
-            }
-
-            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y) && _chartTabs.ActiveTab.DrawingState.ActiveTool != Omnijure.Visual.Drawing.DrawingTool.None)
-            {
-                HandleDrawingToolClick();
-                return;
-            }
-
-            if (_layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
-            {
-                _isDragging = true;
-                return;
-            }
-
-            // Panel system handles: panel drag handles, tab clicks, panel edge resize
-            _layout.HandleMouseDown(_mousePos.X, _mousePos.Y);
-        }
-        else if (arg2 == MouseButton.Right)
-        {
-            var activeTab = _chartTabs.ActiveTab;
-            // Cancel current drawing if any
-            if (activeTab.DrawingState.CurrentDrawing != null)
-            {
-                activeTab.DrawingState.CurrentDrawing = null;
-                activeTab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
-            }
-            else
-            {
-                activeTab.AutoScaleY = true;
-                activeTab.Zoom = 1.0f;
-                activeTab.ScrollOffset = 0;
-            }
-            foreach(var dd in _uiDropdowns) { dd.IsOpen = false; dd.SearchQuery = ""; dd.ScrollOffset = 0; }
-        }
-    }
-    
-    private static void OnMouseUp(IMouse arg1, MouseButton arg2) 
-    { 
-        if (arg2 == MouseButton.Left) 
-        {
-            _isDragging = false; 
-            _isResizingPrice = false;
-            _toolbar.HandleMouseUp();
-            _layout.HandleMouseUp();
-        }
-    }
-
-    private static void OnMouseMove(IMouse arg1, System.Numerics.Vector2 pos)
-    {
-        float deltaX = pos.X - _lastMousePos.X; 
-        float deltaY = pos.Y - _lastMousePos.Y;
-        
-        _mousePos = new Vector2D<float>(pos.X, pos.Y);
-        
-        // Settings modal hover tracking
-        if (_settingsModal != null && (_settingsModal.IsVisible || _settingsModal.AnimationProgress > 0))
-        {
-            _settingsModalRenderer.HandleMouseMove(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y, _settingsModal);
-        }
-
-        // Disable UI hover if any modal is visible
-        bool settingsActive = _settingsModal != null && (_settingsModal.IsVisible || _settingsModal.AnimationProgress > 0);
-        bool modalActive = settingsActive || (_searchModal != null && (_searchModal.IsVisible || _searchModal.AnimationProgress > 0));
-        
-        // 0. UI Hover
-        foreach(var dd in _uiDropdowns) 
-            dd.IsHovered = !modalActive && dd.Contains(_mousePos.X, _mousePos.Y);
-            
-        foreach(var btn in _uiButtons) 
-            btn.IsHovered = !modalActive && btn.Contains(_mousePos.X, _mousePos.Y);
-
-        if (modalActive)
-        {
-             _lastMousePos = _mousePos;
-             return;
-        }
-
-        // Window drag
-        if (_toolbar.HandleMouseMove())
-        {
-            _lastMousePos = _mousePos;
-            return;
-        }
-
-        // Chart price axis drag has highest priority (already committed)
-        if (_isResizingPrice)
-        {
-            var t = _chartTabs.ActiveTab;
-            float sensitivity = 0.005f;
-            float factor = 1.0f + (deltaY * sensitivity);
-
-            float mid = (t.ViewMinY + t.ViewMaxY) / 2.0f;
-            float range = (t.ViewMaxY - t.ViewMinY);
-            float newRange = range * factor;
-
-            if (newRange < 0.00001f) newRange = 0.00001f;
-
-            t.ViewMinY = mid - newRange / 2.0f;
-            t.ViewMaxY = mid + newRange / 2.0f;
-            _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
-            return;
-        }
-
-        // Chart pan/drag has priority over panel system
-        if (_isDragging)
-        {
-            var t = _chartTabs.ActiveTab;
-            // Horizontal Pan (TradingView-style: allow free scrolling into future)
-            t.ScrollOffset += (int)(deltaX * 0.1f * (t.Zoom < 1 ? 1 : 1/t.Zoom));
-
-            // Vertical Pan
-            if (System.Math.Abs(deltaY) > 0.5f)
-            {
-                t.AutoScaleY = false;
-                float range = t.ViewMaxY - t.ViewMinY;
-                float pxHeight = _window.Size.Y;
-                if (pxHeight > 0)
-                {
-                    float pricePerPx = range / pxHeight;
-                    float priceDelta = deltaY * pricePerPx;
-                    t.ViewMinY += priceDelta;
-                    t.ViewMaxY += priceDelta;
-                }
-            }
-            _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
-            return;
-        }
-
-        // Manejar movimiento de paneles (drag & drop)
-        _layout.HandleMouseMove(pos.X, pos.Y, deltaX, _window.Size.X, _window.Size.Y);
-
-        // Si esta arrastrando o redimensionando panel, bloquear otras interacciones
-        if (_layout.IsDraggingPanel || _layout.IsResizingPanel)
-        {
-            _lastMousePos = _mousePos;
-            return;
-        }
-
-        // If a dropdown is open, block chart dragging
-        if (_uiDropdowns.Any(d => d.IsOpen))
-        {
-             _lastMousePos = _mousePos;
-             return;
-        }
-
-        var drawTab = _chartTabs.ActiveTab;
-        if (drawTab.DrawingState.CurrentDrawing != null && _layout.ChartRect.Contains(_mousePos.X, _mousePos.Y))
-        {
-            // Update current drawing (e.g., trend line endpoint) as mouse moves
-            float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
-            float chartLocalY = _mousePos.Y - _layout.ChartRect.Top;
-
-            const int RightAxisWidth = 60;
-            const int BottomAxisHeight = 30;
-            const int VolumeHeight = 80;
-            int chartW = (int)_layout.ChartRect.Width - RightAxisWidth;
-            int mainChartH = (int)_layout.ChartRect.Height - BottomAxisHeight - VolumeHeight;
-
-            if (chartLocalX >= 0 && chartLocalX <= chartW && chartLocalY >= 0 && chartLocalY <= mainChartH)
-            {
-                float baseCandleWidth = 8.0f;
-                float candleWidth = baseCandleWidth * drawTab.Zoom;
-                if (candleWidth < 1.0f) candleWidth = 1.0f;
-                int visibleCandles = (int)System.Math.Ceiling(chartW / candleWidth);
-                if (visibleCandles < 2) visibleCandles = 2;
-
-                int screenIndex = (int)((visibleCandles - 1) - (chartLocalX - candleWidth / 2) / candleWidth);
-                int candleIndex = screenIndex + drawTab.ScrollOffset;
-
-                float normalized = (mainChartH - chartLocalY) / mainChartH;
-                float price = drawTab.ViewMinY + (normalized * (drawTab.ViewMaxY - drawTab.ViewMinY));
-
-                if (drawTab.DrawingState.CurrentDrawing is Omnijure.Visual.Drawing.TrendLineObject trendLine)
-                {
-                    trendLine.End = (candleIndex, price);
-                }
-            }
-        }
-        _lastMousePos = new Vector2D<float>(pos.X, pos.Y);
-        
-        // Hover effects
-        foreach(var btn in _uiButtons) btn.IsHovered = btn.Contains(pos.X, pos.Y);
     }
 
     private static void HandleDrawingToolClick()
@@ -1122,6 +675,12 @@ public static partial class Program
             case "script_fontdown": break; // TODO: decrease editor font
             case "script_settings": break; // TODO: script settings panel
         }
+    }
+
+    private static void OnResize(Vector2D<int> size)
+    {
+        if (size.X == 0 || size.Y == 0) return;
+        _gl?.Viewport(size);
     }
 
     private static void OnClose()

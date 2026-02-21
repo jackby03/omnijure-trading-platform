@@ -6,6 +6,7 @@ using Silk.NET.Maths;
 using Omnijure.Core.DataStructures;
 using System.Collections.Generic;
 using System.Linq;
+using Omnijure.Visual.Input;
 
 namespace Omnijure.Visual.Rendering;
 
@@ -16,6 +17,7 @@ public class LayoutManager
 
     // Panel System
     private readonly PanelSystem _panelSystem;
+    private readonly PanelSystemRenderer _panelSystemRenderer;
 
     // Bounds
     public SKRect HeaderRect { get; private set; }
@@ -28,6 +30,8 @@ public class LayoutManager
     private readonly StatusBarRenderer _statusBar;
     private readonly PanelContentRenderer _panelContent;
     private readonly SecondaryToolbarRenderer _secondaryToolbar;
+    
+    public PanelInputHandler InputHandler { get; private set; }
 
     // Chart tab bar
     private ChartTabManager _chartTabs;
@@ -46,14 +50,21 @@ public class LayoutManager
 
     public void SetChartTabs(ChartTabManager tabs) => _chartTabs = tabs;
 
-    public LayoutManager()
+    public LayoutManager(
+        PanelSystem panelSystem,
+        PanelSystemRenderer panelSystemRenderer,
+        PanelContentRenderer panelContent,
+        SidebarRenderer sidebar)
     {
-        _sidebar = new SidebarRenderer();
+        _panelSystem = panelSystem;
+        _panelSystemRenderer = panelSystemRenderer;
+        _panelContent = panelContent;
+        _sidebar = sidebar;
+
         _leftToolbar = new LeftToolbarRenderer();
         _statusBar = new StatusBarRenderer();
         _secondaryToolbar = new SecondaryToolbarRenderer();
-        _panelSystem = new PanelSystem();
-        _panelContent = new PanelContentRenderer(_panelSystem, _sidebar);
+        InputHandler = new PanelInputHandler(_panelSystem, _panelContent);
     }
 
     public float TotalHeaderHeight => HeaderHeight + SecondaryToolbarRenderer.ToolbarHeight;
@@ -164,7 +175,7 @@ public class LayoutManager
         finally { PaintPool.Instance.Return(wsBgPaint); }
 
         // CAPA 0.5: Panel backgrounds + chrome
-        _panelSystem.Render(canvas);
+        _panelSystemRenderer.Render(canvas, _panelSystem);
 
         // CAPA 0.75: Secondary toolbar (context-sensitive action bar)
         var activeCenterForToolbar = _panelSystem.GetActiveCenterTabId();
@@ -237,7 +248,7 @@ public class LayoutManager
         _panelContent.RenderPanelContent(canvas, orderBook, trades, buffer);
 
         // CAPA 3: Dock zone preview + dragging panel
-        _panelSystem.RenderOverlay(canvas, _panelContent.RenderDraggingPanelContent);
+        _panelSystemRenderer.RenderOverlay(canvas, _panelSystem, _panelContent.RenderDraggingPanelContent);
 
         // CAPA 4: Status bar
         _statusBar.Render(canvas, screenWidth, screenHeight);
@@ -442,14 +453,6 @@ public class LayoutManager
     }
 
     /// <summary>
-    /// Delegates panel scroll handling to PanelContentRenderer.
-    /// </summary>
-    public bool HandlePanelScroll(float x, float y, float deltaY)
-    {
-        return _panelContent.HandlePanelScroll(x, y, deltaY);
-    }
-
-    /// <summary>
     /// Returns the price axis strip rect in screen coordinates (right 60px of chart content area).
     /// </summary>
     public SKRect GetPriceAxisRect()
@@ -463,10 +466,6 @@ public class LayoutManager
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
     public bool IsResizingPanel => _panelSystem.IsResizing;
 
-    // Script editor passthrough
-    public bool HandleScriptEditorClick(float x, float y) => _panelContent.HandleScriptEditorClick(x, y);
-    public void ScriptEditorInsertChar(char ch) => _panelContent.InsertChar(ch);
-    public void ScriptEditorHandleKey(PanelContentRenderer.EditorKey key) => _panelContent.HandleEditorKey(key);
     public bool IsScriptEditorFocused { get => _panelContent.IsEditorFocused; set => _panelContent.IsEditorFocused = value; }
     public int ScriptEditorActiveScript { get => _panelContent.EditorActiveScript; set => _panelContent.EditorActiveScript = value; }
 

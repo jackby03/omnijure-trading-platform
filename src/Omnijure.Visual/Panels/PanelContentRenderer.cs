@@ -14,10 +14,10 @@ public class PanelContentRenderer
 {
     private readonly PanelSystem _panelSystem;
     private readonly SidebarRenderer _sidebar;
+    private readonly Dictionary<string, Omnijure.Visual.Panels.IPanelRenderer> _renderers;
 
     // Panel scroll state: panelId -> scrollY offset
     private readonly Dictionary<string, float> _panelScrollOffsets = new();
-    private float _aiChatContentHeight = 600;
     private bool _aiScrollInitialized;
 
     // Cached references for overlay rendering
@@ -50,10 +50,14 @@ public class PanelContentRenderer
     private const int ConsoleLineCount = 20;
     private const float ConsoleLineH = 15;
 
-    public PanelContentRenderer(PanelSystem panelSystem, SidebarRenderer sidebar)
+    public PanelContentRenderer(PanelSystem panelSystem, SidebarRenderer sidebar, IEnumerable<Omnijure.Visual.Panels.IPanelRenderer> renderers)
     {
         _panelSystem = panelSystem;
         _sidebar = sidebar;
+        _renderers = new Dictionary<string, Omnijure.Visual.Panels.IPanelRenderer>();
+        foreach (var r in renderers) {
+            _renderers[r.PanelId] = r;
+        }
     }
 
     public void RenderPanelContent(SKCanvas canvas, OrderBook orderBook, RingBuffer<MarketTrade> trades, RingBuffer<Candle> buffer)
@@ -90,24 +94,15 @@ public class PanelContentRenderer
             case PanelDefinitions.TRADES:
                 _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades, panel.Position);
                 break;
-            case PanelDefinitions.POSITIONS:
-                RenderPositionsPanel(canvas, contentWidth, contentHeight, scrollY);
-                break;
-            case PanelDefinitions.AI_ASSISTANT:
-                RenderAIAssistantPanel(canvas, contentWidth, contentHeight, scrollY);
-                break;
-            case PanelDefinitions.PORTFOLIO:
-                canvas.Translate(0, -scrollY);
-                RenderPortfolioPanel(canvas, contentWidth, contentHeight);
-                break;
-            case PanelDefinitions.SCRIPT_EDITOR:
-                RenderScriptEditorPanel(canvas, contentWidth, contentHeight, scrollY);
-                break;
-            case PanelDefinitions.ALERTS:
-                RenderAlertsPanel(canvas, contentWidth, contentHeight, scrollY);
-                break;
-            case PanelDefinitions.LOGS:
-                RenderConsolePanel(canvas, contentWidth, contentHeight, scrollY);
+            default:
+                if (_renderers.TryGetValue(panel.Config.Id, out var renderer))
+                {
+                    renderer.Render(canvas, new SKRect(0, 0, contentWidth, contentHeight), scrollY);
+                }
+                else
+                {
+                    RenderPlaceholderPanel(canvas, contentWidth, contentHeight, panel.Config.DisplayName, "Not implemented");
+                }
                 break;
         }
 
@@ -274,7 +269,7 @@ public class PanelContentRenderer
 
             // Total height of all bubbles content (from headerH to final y)
             float bubblesContentH = y + 8 - headerH;
-            _aiChatContentHeight = bubblesContentH;
+            // _aiChatContentHeight removed
 
             canvas.Restore(); // restore scroll clip
 
@@ -1678,17 +1673,11 @@ public class PanelContentRenderer
 
     private float GetPanelContentHeight(DockablePanel panel)
     {
-        float fixedHeaderH = 60;
-        return panel.Config.Id switch
+        if (_renderers.TryGetValue(panel.Config.Id, out var renderer))
         {
-            PanelDefinitions.POSITIONS => fixedHeaderH + (48 * 4) + 10,
-            PanelDefinitions.PORTFOLIO => 520,
-            PanelDefinitions.AI_ASSISTANT => _aiChatContentHeight,
-            PanelDefinitions.ALERTS => AlertsRowCount * AlertsRowH + 8,
-            PanelDefinitions.LOGS => ConsoleLineCount * ConsoleLineH + 8,
-            PanelDefinitions.SCRIPT_EDITOR => GetScriptEditorContentHeight(),
-            _ => panel.ContentBounds.Height
-        };
+            return renderer.GetContentHeight();
+        }
+        return panel.ContentBounds.Height;
     }
 
     private float GetScriptEditorContentHeight()
