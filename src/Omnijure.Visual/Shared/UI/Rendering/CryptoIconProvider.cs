@@ -75,7 +75,7 @@ public class CryptoIconProvider
         {
             // Draw the downloaded icon
             var destRect = new SKRect(x, y, x + size, y + size);
-            using var paint = new SKPaint { IsAntialias = true, FilterQuality = SKFilterQuality.High };
+            using var paint = new SKPaint { IsAntialias = true };
             canvas.DrawBitmap(icon, destRect, paint);
         }
         else

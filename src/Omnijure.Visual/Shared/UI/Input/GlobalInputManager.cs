@@ -11,14 +11,14 @@ namespace Omnijure.Visual.Shared.UI.Input;
 /// </summary>
 public class GlobalInputManager
 {
-    public Action<float, float> HandleToolbarClick { get; set; }
-    public Action<float, float, float> HandlePanelScroll { get; set; }
-    public Action<string, string> SwitchContext { get; set; }
-    public Action<string> HandleSecondaryToolbarAction { get; set; }
-    public Action SyncUiWithActiveTab { get; set; }
-    public Action HandleDrawingToolClick { get; set; }
-    public Func<Vector2D<int>> GetWindowSize { get; set; }
-    public Func<Vector2D<int>> GetWindowPosition { get; set; }
+    public Action<float, float> HandleToolbarClick { get; set; } = (_, _) => { };
+    public Action<float, float, float> HandlePanelScroll { get; set; } = (_, _, _) => { };
+    public Action<string, string> SwitchContext { get; set; } = (_, _) => { };
+    public Action<string> HandleSecondaryToolbarAction { get; set; } = _ => { };
+    public Action SyncUiWithActiveTab { get; set; } = () => { };
+    public Action HandleDrawingToolClick { get; set; } = () => { };
+    public Func<Vector2D<int>> GetWindowSize { get; set; } = () => default;
+    public Func<Vector2D<int>> GetWindowPosition { get; set; } = () => default;
 
     public bool IsDragging { get; set; }
     public bool IsResizingPrice { get; set; }
@@ -120,7 +120,7 @@ public class GlobalInputManager
                 if (_searchBox.IsFocused) return;
             }
 
-            UiDropdown clickedDd = null;
+            UiDropdown? clickedDd = null;
             foreach (var dd in _uiDropdowns)
             {
                 if (dd.Contains(MousePos.X, MousePos.Y))

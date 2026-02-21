@@ -120,7 +120,7 @@ public class UiSearchModal
         }
     }
 
-    public string GetSelectedSymbol()
+    public string? GetSelectedSymbol()
     {
         if (_filteredResults.Count > 0 && SelectedIndex < _filteredResults.Count)
         {

@@ -17,38 +17,32 @@ namespace Omnijure.Visual;
 
 public static partial class Program
 {
-    private static IWindow _window;
-    private static GL _gl;
-    private static GRContext _grContext;
-    private static SKSurface _surface;
-    private static ChartRenderer _renderer;
-    private static LayoutManager _layout;
-    private static GlobalInputManager _inputManager;
-    private static ToolbarRenderer _toolbar;
-    private static SearchModalRenderer _searchModalRenderer;
-    private static SettingsModalRenderer _settingsModalRenderer;
-    private static UiSettingsModal _settingsModal;
-    private static ISettingsProvider _settings;
-    private static Omnijure.Mind.ScriptEngine _mind;
-    
+    private static IWindow _window = null!;
+    private static GL _gl = null!;
+    private static GRContext _grContext = null!;
+    private static SKSurface? _surface;
+    private static ChartRenderer _renderer = null!;
+    private static LayoutManager _layout = null!;
+    private static GlobalInputManager _inputManager = null!;
+    private static ToolbarRenderer _toolbar = null!;
+    private static SearchModalRenderer _searchModalRenderer = null!;
+    private static SettingsModalRenderer _settingsModalRenderer = null!;
+    private static UiSettingsModal _settingsModal = null!;
+    private static ISettingsProvider _settings = null!;
+    private static Omnijure.Mind.ScriptEngine? _mind;
+
     // Chart Tabs
-    private static ChartTabManager _chartTabs;
-    private static Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus _eventBus;
+    private static ChartTabManager _chartTabs = null!;
+    private static Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus _eventBus = null!;
 
     // UI Elements
     private static List<UiButton> _uiButtons = new List<UiButton>();
     private static List<UiDropdown> _uiDropdowns = new List<UiDropdown>();
-    private static UiDropdown _assetDropdown;
-    private static UiDropdown _intervalDropdown;
-    private static UiDropdown _chartTypeDropdown;
-    private static UiSearchBox _searchBox;
-    private static UiSearchModal _searchModal;
-
-    // Shared Interaction State (not per-tab)
-    private static bool _isDragging = false;
-    private static Vector2D<float> _lastMousePos;
-    private static Vector2D<float> _mousePos;
-    private static bool _isResizingPrice = false;
+    private static UiDropdown _assetDropdown = null!;
+    private static UiDropdown _intervalDropdown = null!;
+    private static UiDropdown _chartTypeDropdown = null!;
+    private static UiSearchBox _searchBox = null!;
+    private static UiSearchModal _searchModal = null!;
 
     public static void Main(string[] args)
     {
@@ -125,7 +119,7 @@ public static partial class Program
         try
         {
             var monitor = _window.Monitor;
-            if (monitor.VideoMode.Resolution.HasValue)
+            if (monitor != null && monitor.VideoMode.Resolution.HasValue)
             {
                 var res = monitor.VideoMode.Resolution.Value;
                 _window.Position = new Vector2D<int>(
@@ -360,8 +354,8 @@ public static partial class Program
         var tab = _chartTabs.ActiveTab;
 
         // Convert screen coordinates to chart-local coordinates
-        float chartLocalX = _mousePos.X - _layout.ChartRect.Left;
-        float chartLocalY = _mousePos.Y - _layout.ChartRect.Top;
+        float chartLocalX = _inputManager.MousePos.X - _layout.ChartRect.Left;
+        float chartLocalY = _inputManager.MousePos.Y - _layout.ChartRect.Top;
 
         // Chart dimensions (matching ChartRenderer's layout)
         const int RightAxisWidth = 60;
@@ -521,15 +515,15 @@ public static partial class Program
         }
 
         // Pass to Layout
-        _layout.Render(_surface.Canvas, _renderer, activeTab.Buffer, decision, activeTab.ScrollOffset, activeTab.Zoom, activeTab.Symbol, activeTab.Timeframe, activeTab.ChartType, _uiButtons, activeTab.ViewMinY, activeTab.ViewMaxY, _mousePos, activeTab.OrderBook, activeTab.Trades, activeTab.DrawingState, _window.Size.X, _window.Size.Y, scriptOutputs);
-        
+        _layout.Render(_surface.Canvas, _renderer, activeTab.Buffer, decision, activeTab.ScrollOffset, activeTab.Zoom, activeTab.Symbol, activeTab.Timeframe, activeTab.ChartType, _uiButtons, activeTab.ViewMinY, activeTab.ViewMaxY, _inputManager.MousePos, activeTab.OrderBook, activeTab.Trades, activeTab.DrawingState, _window.Size.X, _window.Size.Y, scriptOutputs);
+
         // Render Toolbar (Top)
         _toolbar.UpdateWindowSize(_window.Size.X, _window.Size.Y);
-        _toolbar.UpdateMousePos(_mousePos.X, _mousePos.Y, _window.Size.X, _window.Size.Y);
-        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _assetDropdown, _uiDropdowns, _uiButtons);
+        _toolbar.UpdateMousePos(_inputManager.MousePos.X, _inputManager.MousePos.Y, _window.Size.X, _window.Size.Y);
+        _toolbar.Render(_surface.Canvas, _layout.HeaderRect, _searchBox, _assetDropdown!, _uiDropdowns, _uiButtons);
 
         // Secondary toolbar mouse hover
-        _layout.UpdateSecondaryToolbarMouse(_mousePos.X, _mousePos.Y);
+        _layout.UpdateSecondaryToolbarMouse(_inputManager.MousePos.X, _inputManager.MousePos.Y);
         
         // Render Search Modal (if visible or animating)
         if (_searchModal != null)

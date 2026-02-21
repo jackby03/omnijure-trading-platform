@@ -19,14 +19,13 @@ public class PanelContentRenderer
     private bool _aiScrollInitialized;
 
     // Cached references for overlay rendering
-    private OrderBook _lastOrderBook;
-    private RingBuffer<MarketTrade> _lastTrades;
+    private OrderBook? _lastOrderBook;
+    private RingBuffer<MarketTrade>? _lastTrades;
 
     // Script editor state
     private ScriptManager? _activeScriptManager;
     private int _editorActiveScript;
     private int _editorCursorPos; // absolute position in source string
-    private int _editorScrollLine;
     private bool _isEditorFocused;
     private int _cursorBlinkTicks;
 
@@ -87,10 +86,12 @@ public class PanelContentRenderer
         switch (panel.Config.Id)
         {
             case PanelDefinitions.ORDERBOOK:
-                _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, _lastOrderBook, panel.Position);
+                if (_lastOrderBook != null)
+                    _sidebar.RenderOrderBook(canvas, contentWidth, contentHeight, _lastOrderBook, panel.Position);
                 break;
             case PanelDefinitions.TRADES:
-                _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades, panel.Position);
+                if (_lastTrades != null)
+                    _sidebar.RenderTrades(canvas, contentWidth, contentHeight, _lastTrades, panel.Position);
                 break;
             default:
                 if (_renderers.TryGetValue(panel.Config.Id, out var renderer))

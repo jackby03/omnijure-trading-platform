@@ -33,7 +33,7 @@ public class LayoutManager
     public PanelInputHandler InputHandler { get; private set; }
 
     // Chart tab bar
-    private ChartTabManager _chartTabs;
+    private ChartTabManager? _chartTabs;
     private SKRect _chartTabBarRect;
     private readonly List<(int tabIndex, SKRect rect, SKRect closeRect)> _chartTabRects = new();
     private SKRect _addTabButtonRect;
@@ -189,7 +189,7 @@ public class LayoutManager
 
         if (chartIsActiveCenter)
         {
-            var contentArea = chartPanel.ContentBounds;
+            var contentArea = chartPanel!.ContentBounds;
 
             // Render chart tab bar at the top of content area
             bool hasTabs = _chartTabs != null && _chartTabs.Count > 0;

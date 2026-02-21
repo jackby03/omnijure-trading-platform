@@ -585,26 +585,28 @@ public class ChartRenderer
         // Draw UI Buttons
         using var btnFill = new SKPaint { Color = ThemeManager.ButtonDefault, Style = SKPaintStyle.Fill };
         using var btnHover = new SKPaint { Color = ThemeManager.ButtonHover, Style = SKPaintStyle.Fill };
-        using var textPaint = new SKPaint { Color = ThemeManager.TextWhite, TextSize = 14, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Segoe UI") };
+        using var textFont = new SKFont(SKTypeface.FromFamilyName("Segoe UI"), 14);
+        using var textPaint = new SKPaint { Color = ThemeManager.TextWhite, IsAntialias = true };
 
         if (buttons != null)
         {
             foreach(var btn in buttons)
             {
                 canvas.DrawRoundRect(btn.Rect, 5, 5, btn.IsHovered ? btnHover : btnFill);
-                
+
                 // Center text
-                float textWidth = textPaint.MeasureText(btn.Text);
+                float textWidth = textFont.MeasureText(btn.Text);
                 float tx = btn.Rect.Left + (btn.Rect.Width - textWidth) / 2;
-                float ty = btn.Rect.Top + (btn.Rect.Height + 10) / 2; 
-                canvas.DrawText(btn.Text, tx, ty, textPaint);
+                float ty = btn.Rect.Top + (btn.Rect.Height + 10) / 2;
+                canvas.DrawText(btn.Text, tx, ty, textFont, textPaint);
             }
         }
-        
+
         // PRICE
         SKColor priceColor = ThemeManager.TextWhite;
-        using var pricePaint = new SKPaint { Color = priceColor, TextSize = 16, IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Consolas", SKFontStyle.Bold) };
-        canvas.DrawText(price.ToString("F2") + " " + symbol, canvas.DeviceClipBounds.Width - 300, 30, pricePaint);
+        using var priceFont = new SKFont(SKTypeface.FromFamilyName("Consolas", SKFontStyle.Bold), 16);
+        using var pricePaint = new SKPaint { Color = priceColor, IsAntialias = true };
+        canvas.DrawText(price.ToString("F2") + " " + symbol, canvas.DeviceClipBounds.Width - 300, 30, priceFont, pricePaint);
     }
     
     // NEW: "The Brain" Layer
@@ -701,8 +703,9 @@ public class ChartRenderer
     private void DrawCrosshairLabels(SKCanvas canvas, float x, float y, int chartW, int chartH, float min, float max, RingBuffer<Candle> buffer, int scrollOffset, int visible, float candleWidth, string interval)
     {
         using var bgPaint = new SKPaint { Color = new SKColor(50, 50, 50), Style = SKPaintStyle.Fill };
-        using var textPaint = new SKPaint { Color = SKColors.White, TextSize = 11, IsAntialias = true };
-        
+        using var crosshairFont = new SKFont(SKTypeface.Default, 11);
+        using var textPaint = new SKPaint { Color = SKColors.White, IsAntialias = true };
+
         // 1. Price Label (Right Axis)
         // Map Y back to Price
         // Y = Height - (Norm * Height)
@@ -712,15 +715,15 @@ public class ChartRenderer
         float range = max - min;
         float norm = (chartH - y) / chartH;
         float price = min + (norm * range);
-        
+
         string priceLabel = FormatPrice(price);
-        float pw = textPaint.MeasureText(priceLabel);
-        float ph = 14; 
-        
+        float pw = crosshairFont.MeasureText(priceLabel);
+        float ph = 14;
+
         SKRect priceRect = new SKRect(chartW, y - ph/2, chartW + pw + 10, y + ph/2);
         canvas.DrawRect(priceRect, bgPaint);
-        canvas.DrawText(priceLabel, chartW + 5, y + 4, textPaint);
-        
+        canvas.DrawText(priceLabel, chartW + 5, y + 4, crosshairFont, textPaint);
+
         // 2. Time Label (Bottom Axis)
         // Map X back to Index
         // x = (visible - 1 - i) * cw + cw/2
@@ -728,9 +731,9 @@ public class ChartRenderer
         float iFloat = (visible - 1) - ((x - candleWidth/2) / candleWidth);
         int i = (int)Math.Round(iFloat);
         int idx = i + scrollOffset;
-        
+
         DateTime time = DateTime.UtcNow; // Fallback
-        
+
         var latestTs = (buffer.Count > 0) ? buffer[0].Timestamp : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         DateTime latestTime = DateTimeOffset.FromUnixTimeMilliseconds(latestTs).LocalDateTime;
         TimeSpan intervalSpan = ParseInterval(interval);
@@ -744,12 +747,12 @@ public class ChartRenderer
             time = DateTimeOffset.FromUnixTimeMilliseconds(buffer[idx].Timestamp).LocalDateTime;
         }
         // If idx too large, use oldest time? Or hide?
-        
+
         string timeLabel = time.ToString("dd MMM HH:mm");
-        float tw = textPaint.MeasureText(timeLabel);
-        
+        float tw = crosshairFont.MeasureText(timeLabel);
+
         SKRect timeRect = new SKRect(x - tw/2 - 5, chartH, x + tw/2 + 5, chartH + 18);
         canvas.DrawRect(timeRect, bgPaint);
-        canvas.DrawText(timeLabel, x - tw/2, chartH + 14, textPaint);
+        canvas.DrawText(timeLabel, x - tw/2, chartH + 14, crosshairFont, textPaint);
     }
 }
