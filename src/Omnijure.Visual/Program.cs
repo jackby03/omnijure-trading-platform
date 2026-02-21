@@ -34,6 +34,7 @@ public static partial class Program
     
     // Chart Tabs
     private static ChartTabManager _chartTabs;
+    private static Omnijure.Core.Events.IEventBus _eventBus;
 
     // UI Elements
     private static List<UiButton> _uiButtons = new List<UiButton>();
@@ -155,10 +156,10 @@ public static partial class Program
         _settingsModalRenderer = new SettingsModalRenderer();
         _settingsModal = new UiSettingsModal();
 
-        // 3. Application Bootstrapper
         var serviceProvider = Omnijure.Visual.Core.ApplicationBootstrapper.ConfigureServices();
         _layout = serviceProvider.GetRequiredService<LayoutManager>();
         _settings = serviceProvider.GetRequiredService<ISettingsProvider>();
+        _eventBus = serviceProvider.GetRequiredService<Omnijure.Core.Events.IEventBus>();
         _chartTabs = Omnijure.Visual.Core.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
 
         // Wire up View menu panel toggles
@@ -283,6 +284,8 @@ public static partial class Program
         _chartTabs.SwitchContext(symbol, interval);
 
         var tab = _chartTabs.ActiveTab;
+        _eventBus.Publish(new Omnijure.Core.Events.SymbolChangedEvent(tab.Id, symbol));
+        _eventBus.Publish(new Omnijure.Core.Events.IntervalChangedEvent(tab.Id, interval));
 
         // Update Title
         _window.Title = $"Omnijure - {tab.Symbol} [{tab.Timeframe}]";

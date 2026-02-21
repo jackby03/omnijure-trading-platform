@@ -48,7 +48,7 @@ public class ChartTabState
         Buffer = new RingBuffer<Candle>(4096);
         OrderBook = new OrderBook();
         Trades = new RingBuffer<MarketTrade>(1024);
-        Connection = exchangeFactory.Create(Buffer, OrderBook, Trades);
+        Connection = exchangeFactory.Create(Id, Buffer, OrderBook, Trades);
 
         // Add default indicator script
         Scripts.AddScript(DefaultScript, "Moving Averages");

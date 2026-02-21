@@ -16,6 +16,7 @@ public static class ApplicationBootstrapper
         services.AddSingleton<ICryptographyService, WindowsDpapiCryptographyService>();
         services.AddSingleton<ISettingsProvider, SettingsManager>();
         services.AddSingleton<IExchangeClientFactory, BinanceClientFactory>();
+        services.AddSingleton<Omnijure.Core.Events.IEventBus, Omnijure.Core.Events.EventBus>();
 
         // UI Components
         services.AddSingleton<Omnijure.Visual.Rendering.PanelSystem>();

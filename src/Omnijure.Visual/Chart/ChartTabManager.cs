@@ -75,9 +75,6 @@ public class ChartTabManager
         tab.DrawingState.Objects.Clear();
         tab.DrawingState.CurrentDrawing = null;
         tab.DrawingState.ActiveTool = Omnijure.Visual.Drawing.DrawingTool.None;
-
-        // Reconnect WebSocket
-        _ = tab.Connection.ConnectAsync(symbol, timeframe);
     }
 
     /// <summary>

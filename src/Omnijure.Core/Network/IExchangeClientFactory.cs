@@ -1,16 +1,24 @@
 using Omnijure.Core.DataStructures;
+using Omnijure.Core.Events;
 
 namespace Omnijure.Core.Network;
 
 public interface IExchangeClientFactory
 {
-    IExchangeClient Create(RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades);
+    IExchangeClient Create(string clientId, RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades);
 }
 
 public class BinanceClientFactory : IExchangeClientFactory
 {
-    public IExchangeClient Create(RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades)
+    private readonly IEventBus _eventBus;
+
+    public BinanceClientFactory(IEventBus eventBus)
     {
-        return new BinanceClient(buffer, orderBook, trades);
+        _eventBus = eventBus;
+    }
+
+    public IExchangeClient Create(string clientId, RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades)
+    {
+        return new BinanceClient(clientId, _eventBus, buffer, orderBook, trades);
     }
 }

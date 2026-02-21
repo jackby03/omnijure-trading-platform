@@ -77,4 +77,4 @@ build/
 # Agent / local automation folders
 /.claude
 /.agent
-
+GEMINI.md

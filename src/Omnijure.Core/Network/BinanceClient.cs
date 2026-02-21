@@ -7,10 +7,15 @@ using System.Threading.Tasks;
 using System.Text.Json;
 using Omnijure.Core.DataStructures;
 
+using Omnijure.Core.Events;
+
 namespace Omnijure.Core.Network;
 
 public class BinanceClient : IExchangeClient
 {
+    private readonly string _clientId;
+    private readonly IEventBus _eventBus;
+    private string _currentSymbol = "BTCUSDT";
     private string _currentInterval = "1m";
     private readonly string _baseUrl = "wss://stream.binance.com:9443/ws/";
     private ClientWebSocket _socket;
@@ -20,11 +25,25 @@ public class BinanceClient : IExchangeClient
     private CancellationTokenSource _cts;
     private readonly SemaphoreSlim _connectionLock = new SemaphoreSlim(1, 1);
 
-    public BinanceClient(RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades)
+    public BinanceClient(string clientId, IEventBus eventBus, RingBuffer<Candle> buffer, OrderBook orderBook, RingBuffer<MarketTrade> trades)
     {
+        _clientId = clientId;
+        _eventBus = eventBus;
         _buffer = buffer;
         _orderBook = orderBook;
         _trades = trades;
+
+        _eventBus.Subscribe<SymbolChangedEvent>(e => {
+            if (e.TargetId == _clientId) {
+                _ = ConnectAsync(e.NewSymbol, _currentInterval);
+            }
+        });
+
+        _eventBus.Subscribe<IntervalChangedEvent>(e => {
+            if (e.TargetId == _clientId) {
+                _ = ConnectAsync(_currentSymbol, e.NewInterval);
+            }
+        });
     }
     public async Task ConnectAsync(string symbol = "BTCUSDT", string interval = "1m")
     {
@@ -35,6 +54,7 @@ public class BinanceClient : IExchangeClient
             
             // Normalize
             symbol = symbol.ToUpper();
+            _currentSymbol = symbol;
             _currentInterval = interval;
             
             // 1. Backfill History (REST)
