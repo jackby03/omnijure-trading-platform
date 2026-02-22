@@ -394,7 +394,11 @@ public class PanelSystem
             }
         }
         
-        // Check resize edges
+        // Check resize edges — pick the CLOSEST edge when zones overlap at corners
+        DockablePanel? bestResizePanel = null;
+        ResizeEdge bestResizeEdge = ResizeEdge.None;
+        float bestResizeDist = float.MaxValue;
+
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed && !p.IsFloating && !p.IsCollapsed && p.Position != PanelPosition.Center))
         {
             if (panel.Position == PanelPosition.Bottom && panel.Config.Id != _activeBottomTabId)
@@ -402,12 +406,23 @@ public class PanelSystem
             var edge = GetResizeEdge(panel, x, y);
             if (edge != ResizeEdge.None)
             {
-                _resizingPanel = panel;
-                _resizeEdge = edge;
-                _resizeStartMousePos = (edge == ResizeEdge.Right || edge == ResizeEdge.Left) ? x : y;
-                _resizeStartSize = (edge == ResizeEdge.Right || edge == ResizeEdge.Left) ? panel.Width : panel.Height;
-                return;
+                float dist = DistanceToEdge(panel, edge, x, y);
+                if (dist < bestResizeDist)
+                {
+                    bestResizePanel = panel;
+                    bestResizeEdge = edge;
+                    bestResizeDist = dist;
+                }
             }
+        }
+
+        if (bestResizePanel != null)
+        {
+            _resizingPanel = bestResizePanel;
+            _resizeEdge = bestResizeEdge;
+            _resizeStartMousePos = (bestResizeEdge == ResizeEdge.Right || bestResizeEdge == ResizeEdge.Left) ? x : y;
+            _resizeStartSize = (bestResizeEdge == ResizeEdge.Right || bestResizeEdge == ResizeEdge.Left) ? bestResizePanel.Width : bestResizePanel.Height;
+            return;
         }
         
         // Check handles
@@ -771,7 +786,19 @@ public class PanelSystem
         }
         return ResizeEdge.None;
     }
-    
+
+    private static float DistanceToEdge(DockablePanel panel, ResizeEdge edge, float x, float y)
+    {
+        return edge switch
+        {
+            ResizeEdge.Right  => MathF.Abs(x - panel.Bounds.Right),
+            ResizeEdge.Left   => MathF.Abs(x - panel.Bounds.Left),
+            ResizeEdge.Top    => MathF.Abs(y - panel.Bounds.Top),
+            ResizeEdge.Bottom => MathF.Abs(y - panel.Bounds.Bottom),
+            _ => float.MaxValue
+        };
+    }
+
     public void UpdateChartTitle(string symbol, string interval, float price)
     {
         var chart = GetPanel(PanelDefinitions.CHART);
