@@ -108,6 +108,11 @@ public class GlobalInputManager
                 return;
             }
 
+            // Resize edges (must be checked before toolbar drag)
+            var winSize = GetWindowSize();
+            if (_toolbar.TryStartResize(MousePos.X, MousePos.Y, winSize.X, winSize.Y))
+                return;
+
             // Toolbar interactions (e.g., drag handle, minimize, close)
             var pos = GetWindowPosition();
             if (_toolbar.HandleMouseDown(MousePos.X, MousePos.Y, pos.X, pos.Y))
@@ -252,6 +257,10 @@ public class GlobalInputManager
             return;
         }
 
+        // Window title bar drag
+        if (_toolbar.HandleMouseMove())
+            return;
+
         _layout.UpdateSecondaryToolbarMouse(MousePos.X, MousePos.Y);
 
         // Always forward to panel system for hover effects + drag threshold detection
@@ -300,6 +309,7 @@ public class GlobalInputManager
         {
             IsDragging = false;
             IsResizingPrice = false;
+            _toolbar.HandleMouseUp();
             var size = GetWindowSize();
             _layout.HandleMouseUp(MousePos.X, MousePos.Y, size.X, size.Y);
         }

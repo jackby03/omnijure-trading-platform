@@ -39,6 +39,7 @@ public class PanelSystem
     private const float DragThreshold = 5f;
     private const float PanelGap = 4f;
     private const float ResizeEdgeWidth = 6f;
+    private const float MinCenterWidth = 200f;
     
     // Dock guide constants (VS-style)
     private const float GuideButtonSize = 36f;
@@ -140,6 +141,9 @@ public class PanelSystem
                 _activeTabIds[PanelPosition.Left] = leftPanels[0].Config.Id;
             var activeLeft = leftPanels.First(p => p.Config.Id == _activeTabIds[PanelPosition.Left]);
             float lw = activeLeft.IsCollapsed ? CollapsedWidth : activeLeft.Width;
+            // Clamp so the center area has at least MinCenterWidth
+            float maxLeftW = screenWidth - MinCenterWidth - PanelGap * 2;
+            lw = Math.Min(lw, Math.Max(CollapsedWidth, maxLeftW));
             if (leftPanels.Count > 1)
             {
                 _sideTabBarRects[PanelPosition.Left] = new SKRect(currentLeftX, availableBottom - TabBarHeight, currentLeftX + lw - PanelGap, availableBottom);
@@ -162,6 +166,9 @@ public class PanelSystem
                 _activeTabIds[PanelPosition.Right] = rightPanels[0].Config.Id;
             var activeRight = rightPanels.First(p => p.Config.Id == _activeTabIds[PanelPosition.Right]);
             float rw = activeRight.IsCollapsed ? CollapsedWidth : activeRight.Width;
+            // Clamp so the center area (after left panel) has at least MinCenterWidth
+            float maxRightW = currentRightX - currentLeftX - MinCenterWidth;
+            rw = Math.Min(rw, Math.Max(CollapsedWidth, maxRightW));
             if (rightPanels.Count > 1)
             {
                 _sideTabBarRects[PanelPosition.Right] = new SKRect(currentRightX - rw + PanelGap, availableBottom - TabBarHeight, currentRightX, availableBottom);

@@ -91,6 +91,10 @@ public class ToolbarRenderer
     [DllImport("user32.dll")] private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
     [DllImport("user32.dll")] private static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
 
     private const int GWL_WNDPROC = -4;
     private const int GWL_STYLE   = -16;
@@ -232,9 +236,6 @@ public class ToolbarRenderer
             // Tell Windows where the resize edges are
             case WM_NCHITTEST:
             {
-                // lParam: low word = screen X, high word = screen Y
-                // We need client-relative coords → use ScreenToClient, but simpler:
-                // just fall through to DefWindowProc and fix up if needed.
                 IntPtr defHit = DefWindowProc(hWnd, msg, wParam, lParam);
                 int defVal = (int)defHit;
 
@@ -242,7 +243,17 @@ public class ToolbarRenderer
                 if (defVal >= HTLEFT && defVal <= HTBOTTOMRIGHT)
                     return defHit;
 
-                // Otherwise check ourselves with pixel coords (DefWindowProc might say HTCLIENT)
+                // DefWindowProc returned HTCLIENT — do custom edge detection
+                // using the actual window rect to get client-relative coordinates
+                if (GetWindowRect(hWnd, out var wr))
+                {
+                    GetCursorPos(out var cursorPt);
+                    int cx = cursorPt.X - wr.Left;
+                    int cy = cursorPt.Y - wr.Top;
+                    int customHt = StaticHitTestResize(cx, cy, _lastScreenWidth, _lastScreenHeight);
+                    if (customHt != 0)
+                        return (IntPtr)customHt;
+                }
                 break;
             }
 
@@ -264,6 +275,12 @@ public class ToolbarRenderer
     /// Returns the NCHITTEST value for the given position, or 0 if not on a resize edge.
     /// </summary>
     public int HitTestResize(float x, float y, int screenWidth, int screenHeight)
+        => StaticHitTestResize(x, y, screenWidth, screenHeight);
+
+    /// <summary>
+    /// Static version for use from the static WndProc callback.
+    /// </summary>
+    private static int StaticHitTestResize(float x, float y, int screenWidth, int screenHeight)
     {
         bool left   = x <= ResizeGripSize;
         bool right  = x >= screenWidth - ResizeGripSize;

@@ -409,11 +409,13 @@ public static partial class Program
 
     private static void OnRender(double delta)
     {
-        if (_surface == null)
+        if (_surface == null
+            || _surface.Canvas.DeviceClipBounds.Width != _window.Size.X
+            || _surface.Canvas.DeviceClipBounds.Height != _window.Size.Y)
         {
             if (_window.Size.X > 0 && _window.Size.Y > 0)
                 CreateSurface(_window.Size);
-            return;
+            if (_surface == null) return;
         }
 
         // Active chart tab
@@ -664,6 +666,7 @@ public static partial class Program
     {
         if (size.X == 0 || size.Y == 0) return;
         _gl?.Viewport(size);
+        CreateSurface(size);
     }
 
     private static void OnClose()
