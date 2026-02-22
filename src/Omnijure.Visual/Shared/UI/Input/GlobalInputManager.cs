@@ -197,6 +197,11 @@ public class GlobalInputManager
                 return;
             }
 
+            // Panel system: handles, resize edges, tab bar clicks
+            _layout.HandleMouseDown(MousePos.X, MousePos.Y);
+            if (_layout.IsDraggingPanel || _layout.HasPotentialDrag || _layout.IsResizingPanel)
+                return;
+
             if (_layout.GetPriceAxisRect().Contains(MousePos.X, MousePos.Y))
             {
                 IsResizingPrice = true;
@@ -215,9 +220,6 @@ public class GlobalInputManager
                 IsDragging = true;
                 return;
             }
-
-            // Panel system handled logic
-            _layout.HandleMouseDown(MousePos.X, MousePos.Y);
         }
         else if (button == MouseButton.Right)
         {
@@ -252,13 +254,15 @@ public class GlobalInputManager
 
         _layout.UpdateSecondaryToolbarMouse(MousePos.X, MousePos.Y);
 
-        if (_layout.IsDraggingPanel || _layout.IsResizingPanel)
+        // Always forward to panel system for hover effects + drag threshold detection
         {
             var size = GetWindowSize();
             float dx = MousePos.X - LastMousePos.X;
             _layout.HandleMouseMove(MousePos.X, MousePos.Y, dx, size.X, size.Y);
-            return;
         }
+
+        if (_layout.IsDraggingPanel || _layout.IsResizingPanel)
+            return;
 
         if (IsDragging)
         {
@@ -296,7 +300,8 @@ public class GlobalInputManager
         {
             IsDragging = false;
             IsResizingPrice = false;
-            _layout.HandleMouseUp();
+            var size = GetWindowSize();
+            _layout.HandleMouseUp(MousePos.X, MousePos.Y, size.X, size.Y);
         }
     }
 

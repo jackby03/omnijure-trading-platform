@@ -710,6 +710,7 @@ public class PanelSystem
 
     public bool IsMouseOverPanel(float x, float y) => _panels.Values.Any(p => p.Bounds.Contains(x, y));
     public bool IsDraggingPanel => _draggingPanel != null;
+    public bool HasPendingDrag => _potentialDragPanel != null;
     public bool IsResizing => _resizingPanel != null;
     public bool IsPanelBeingDragged(DockablePanel panel) => _draggingPanel == panel;
     public DockablePanel? GetPanel(string panelId) => _panels.GetValueOrDefault(panelId);

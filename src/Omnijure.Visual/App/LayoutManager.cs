@@ -111,9 +111,9 @@ public class LayoutManager
         return panel != null && !panel.IsClosed;
     }
 
-    public void HandleMouseUp()
+    public void HandleMouseUp(float x, float y, int screenWidth, int screenHeight)
     {
-        _panelSystem.OnMouseUp(0, 0, 0, 0);
+        _panelSystem.OnMouseUp(x, y, screenWidth, screenHeight);
     }
 
     public void HandleMouseMove(float x, float y, float deltaX, int screenWidth, int screenHeight)
@@ -460,6 +460,7 @@ public class LayoutManager
     }
 
     public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
+    public bool HasPotentialDrag => _panelSystem.HasPendingDrag;
     public bool IsResizingPanel => _panelSystem.IsResizing;
 
     public bool IsScriptEditorFocused { get => _panelContent.IsEditorFocused; set => _panelContent.IsEditorFocused = value; }
