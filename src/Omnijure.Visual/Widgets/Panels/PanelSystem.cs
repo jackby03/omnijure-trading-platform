@@ -62,8 +62,16 @@ public class PanelSystem
     
     private enum ResizeEdge { None, Right, Left, Top, Bottom }
     
-    // Bottom tab system
+    // Tab layout constants
     private const float TabBarHeight = 28f;
+    private const float TabPaddingX = 6f;
+    private const float TabIconWidth = 16f; // icon(12) + gap(4)
+    private const float TabRightPad = 8f;
+    private const float TabSpacing = 2f;
+    private const float TabInsetY = 3f;
+    private static readonly SKFont _tabFont = new(SKTypeface.FromFamilyName("Segoe UI"), 11);
+
+    // Bottom tab system
     public string ActiveBottomTabId => _activeBottomTabId;
     private string _activeBottomTabId = PanelDefinitions.ORDERBOOK;
     public SKRect BottomTabBarRect => _bottomTabBarRect;
@@ -231,6 +239,20 @@ public class PanelSystem
         }
         else { _sideTabBarRects.Remove(PanelPosition.Center); }
 
+        // PASO 5: Calculate individual tab rectangles for all tab bars
+        CalculateTabRects(bottomTabs, _bottomTabBarRect, _bottomTabRects);
+        foreach (var pos in new[] { PanelPosition.Left, PanelPosition.Right, PanelPosition.Center })
+        {
+            var sidePanels = _panels.Values
+                .Where(p => p.Position == pos && !p.IsFloating && !p.IsClosed)
+                .OrderBy(p => p.DockOrder)
+                .ToList();
+            if (_sideTabBarRects.TryGetValue(pos, out var barRect) && sidePanels.Count > 1)
+                CalculateTabRects(sidePanels, barRect, _sideTabRects[pos]);
+            else
+                _sideTabRects[pos].Clear();
+        }
+
         // Update handle positions for visible panels (skip inactive tabs)
         foreach (var panel in _panels.Values.Where(p => !p.IsClosed))
         {
@@ -241,6 +263,30 @@ public class PanelSystem
                 && panel.Config.Id != _activeTabIds.GetValueOrDefault(panel.Position, panel.Config.Id))
                 continue;
             UpdatePanelHandles(panel);
+        }
+    }
+
+    private static void CalculateTabRects(List<DockablePanel> tabs, SKRect barRect, List<(string id, SKRect rect)> output)
+    {
+        output.Clear();
+        if (tabs.Count == 0 || barRect.IsEmpty) return;
+
+        float x = barRect.Left + TabPaddingX;
+        float tabY = barRect.Top + TabInsetY;
+        float tabH = barRect.Height - TabInsetY * 2;
+
+        foreach (var tab in tabs)
+        {
+            float textW = TextMeasureCache.Instance.MeasureText(tab.Config.DisplayName, _tabFont);
+            float tabW = TabPaddingX + TabIconWidth + textW + TabRightPad;
+
+            // Clamp tab to not exceed bar right edge
+            if (x + tabW > barRect.Right - TabPaddingX)
+                tabW = barRect.Right - TabPaddingX - x;
+            if (tabW < 20) break; // Too small to render
+
+            output.Add((tab.Config.Id, new SKRect(x, tabY, x + tabW, tabY + tabH)));
+            x += tabW + TabSpacing;
         }
     }
 
