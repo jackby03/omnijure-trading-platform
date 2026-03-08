@@ -13,5 +13,8 @@ global using Omnijure.Visual.Features.Settings;
 global using Omnijure.Visual.Rendering;
 global using Omnijure.Visual.Shared.UI.Components;
 global using Omnijure.Visual.Widgets.Panels;
+global using Omnijure.Visual.Widgets.Docking.Model;
+global using Omnijure.Visual.Widgets.Docking.Api;
+global using Omnijure.Visual.Widgets.Docking;
 global using Omnijure.Visual.Widgets.Sidebars;
 global using Omnijure.Visual.Widgets.Toolbars;

@@ -15,12 +15,22 @@ public class ExchangeSettings
     public string ActiveCredentialId { get; set; } = "";
 }
 
+public enum TradingMode
+{
+    /// <summary>Trades are simulated. No real money is at risk.</summary>
+    Paper,
+    /// <summary>Trades are executed on the live exchange using real funds.</summary>
+    Live
+}
+
 public class GeneralSettings
 {
     public string Language { get; set; } = "en";
     public string Theme { get; set; } = "dark";
     public bool RestoreLastSession { get; set; } = true;
     public bool MinimizeToTray { get; set; }
+    /// <summary>Controls whether orders are sent to the exchange or simulated locally.</summary>
+    public TradingMode TradingMode { get; set; } = TradingMode.Paper;
 }
 
 public class ChartSettings

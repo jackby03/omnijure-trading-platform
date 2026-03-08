@@ -6,6 +6,11 @@ using Omnijure.Core.Features.Settings;
 using Omnijure.Core.Features.Settings.Api;
 using Omnijure.Core.Features.Settings.Model;
 using Omnijure.Visual.Rendering;
+using Omnijure.Visual.Widgets.Docking;
+using Omnijure.Visual.Features.Charting;
+using Omnijure.Visual.Features.Search;
+using Omnijure.Visual.Features.Settings;
+using Omnijure.Visual.Widgets.Toolbars;
 
 namespace Omnijure.Visual.App;
 
@@ -14,25 +19,36 @@ public static class ApplicationBootstrapper
     public static ServiceProvider ConfigureServices()
     {
         var services = new ServiceCollection();
+
+        // Infrastructure
         services.AddSingleton<ICryptographyService, WindowsDpapiCryptographyService>();
         services.AddSettingsFeature();
-        services.AddSingleton<IExchangeClientFactory, BinanceClientFactory>();
-        services.AddSingleton<Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus, Omnijure.Core.Shared.Infrastructure.EventBus.EventBus>();
+        services.AddSingleton<IEventBus, EventBus>();
 
-        // UI Components
-        services.AddSingleton<Omnijure.Visual.Rendering.PanelSystem>();
-        services.AddSingleton<Omnijure.Visual.Rendering.PanelSystemRenderer>();
+        // Exchange
+        services.AddSingleton<IExchangeClientFactory, BinanceClientFactory>();
+
+        // Docking
+        services.AddDockingFeature();
+
+        // Toolbars & renderers
         services.AddSingleton<SidebarRenderer>();
-        // Renderers: Dynamically discover and register all UI Panels
+        services.AddSingleton<LeftToolbarRenderer>();
+        services.AddSingleton<StatusBarRenderer>();
+        services.AddSingleton<SecondaryToolbarRenderer>();
+        services.AddSingleton<ChartRenderer>();
+        services.AddSingleton<ToolbarRenderer>();
+        services.AddSingleton<SearchModalRenderer>();
+        services.AddSingleton<SettingsModalRenderer>();
+        services.AddSingleton<UiSettingsModal>();
+
+        // Auto-discover and register all IPanelRenderer implementations
         var panelRendererType = typeof(Omnijure.Visual.Widgets.Panels.IPanelRenderer);
         var panelTypes = typeof(ApplicationBootstrapper).Assembly.GetTypes()
             .Where(p => panelRendererType.IsAssignableFrom(p) && !p.IsInterface && !p.IsAbstract);
-
         foreach (var type in panelTypes)
-        {
             services.AddSingleton(panelRendererType, type);
-        }
-        
+
         services.AddSingleton<PanelContentRenderer>();
         services.AddSingleton<ChartTabManager>();
         services.AddSingleton<LayoutManager>();
@@ -58,13 +74,13 @@ public static class ApplicationBootstrapper
                 settings.Current.Layout.ActiveCenterTab);
         }
 
-        // Restore tabs from settings or create default
+        // Restore chart tabs from settings or create default
         if (settings.Current.Chart.Tabs.Count > 0)
         {
             foreach (var saved in settings.Current.Chart.Tabs)
             {
                 var tab = chartTabs.AddTab(saved.Symbol, saved.Timeframe);
-                if (Enum.TryParse<Omnijure.Visual.Rendering.ChartType>(saved.ChartType, out var ct))
+                if (Enum.TryParse<ChartType>(saved.ChartType, out var ct))
                     tab.ChartType = ct;
                 tab.Zoom = saved.Zoom;
             }

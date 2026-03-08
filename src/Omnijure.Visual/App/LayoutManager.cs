@@ -14,9 +14,9 @@ public class LayoutManager
     // Layout Config
     public float HeaderHeight { get; private set; } = 28;
 
-    // Panel System
-    private readonly PanelSystem _panelSystem;
-    private readonly PanelSystemRenderer _panelSystemRenderer;
+    // Docking System
+    private readonly IDockingManager _dockingManager;
+    private readonly DockingRenderer _dockingRenderer;
 
     // Bounds
     public SKRect HeaderRect { get; private set; }
@@ -48,22 +48,24 @@ public class LayoutManager
     public bool IsResizingRight => false;
 
     public LayoutManager(
-        PanelSystem panelSystem,
-        PanelSystemRenderer panelSystemRenderer,
+        IDockingManager dockingManager,
+        DockingRenderer dockingRenderer,
         PanelContentRenderer panelContent,
         SidebarRenderer sidebar,
-        ChartTabManager chartTabs)
+        ChartTabManager chartTabs,
+        LeftToolbarRenderer leftToolbar,
+        StatusBarRenderer statusBar,
+        SecondaryToolbarRenderer secondaryToolbar)
     {
-        _panelSystem = panelSystem;
-        _panelSystemRenderer = panelSystemRenderer;
+        _dockingManager = dockingManager;
+        _dockingRenderer = dockingRenderer;
         _panelContent = panelContent;
         _sidebar = sidebar;
         _chartTabs = chartTabs;
-
-        _leftToolbar = new LeftToolbarRenderer();
-        _statusBar = new StatusBarRenderer();
-        _secondaryToolbar = new SecondaryToolbarRenderer();
-        InputHandler = new PanelInputHandler(_panelSystem, _panelContent);
+        _leftToolbar = leftToolbar;
+        _statusBar = statusBar;
+        _secondaryToolbar = secondaryToolbar;
+        InputHandler = new PanelInputHandler(_dockingManager, _panelContent);
     }
 
     public float TotalHeaderHeight => HeaderHeight + SecondaryToolbarRenderer.ToolbarHeight;
@@ -74,17 +76,17 @@ public class LayoutManager
         HeaderRect = new SKRect(0, 0, width, HeaderHeight);
 
         // 1. Update panel system (topEdgeY accounts for both toolbars)
-        _panelSystem.Update(width, height, TotalHeaderHeight);
+        _dockingManager.UpdateLayout(width, height, TotalHeaderHeight);
 
         // 2. ChartRect = actual chart panel bounds
-        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        var chartPanel = _dockingManager.GetPanel(PanelDefinitions.CHART);
         if (chartPanel != null && !chartPanel.IsClosed)
         {
             ChartRect = chartPanel.Bounds;
         }
         else
         {
-            var chartArea = _panelSystem.GetChartArea(width, height, TotalHeaderHeight);
+            var chartArea = _dockingManager.GetChartArea(width, height, TotalHeaderHeight);
             ChartRect = new SKRect(chartArea.Left, TotalHeaderHeight, chartArea.Right, chartArea.Bottom);
         }
 
@@ -95,7 +97,7 @@ public class LayoutManager
 
     public void HandleMouseDown(float x, float y)
     {
-        _panelSystem.OnMouseDown(x, y);
+        _dockingManager.OnMouseDown(x, y);
     }
 
     // Secondary toolbar interaction
@@ -103,27 +105,27 @@ public class LayoutManager
     public string? HandleSecondaryToolbarClick(float x, float y) => _secondaryToolbar.GetButtonAtPosition(x, y);
     public bool IsInSecondaryToolbar(float x, float y) => _secondaryToolbar.Contains(x, y);
 
-    public void TogglePanel(string panelId) => _panelSystem.TogglePanel(panelId);
+    public void TogglePanel(string panelId) => _dockingManager.TogglePanel(panelId);
 
     public bool IsPanelVisible(string panelId)
     {
-        var panel = _panelSystem.GetPanel(panelId);
+        var panel = _dockingManager.GetPanel(panelId);
         return panel != null && !panel.IsClosed;
     }
 
     public void HandleMouseUp(float x, float y, int screenWidth, int screenHeight)
     {
-        _panelSystem.OnMouseUp(x, y, screenWidth, screenHeight);
+        _dockingManager.OnMouseUp(x, y, screenWidth, screenHeight);
     }
 
     public void HandleMouseMove(float x, float y, float deltaX, int screenWidth, int screenHeight)
     {
-        _panelSystem.OnMouseMove(x, y, screenWidth, screenHeight, TotalHeaderHeight);
+        _dockingManager.OnMouseMove(x, y, screenWidth, screenHeight, TotalHeaderHeight);
     }
 
     public Omnijure.Visual.Shared.Lib.Drawing.DrawingTool? HandleToolbarClick(float x, float y)
     {
-        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        var chartPanel = _dockingManager.GetPanel(PanelDefinitions.CHART);
         if (chartPanel == null || chartPanel.IsClosed) return null;
 
         var contentArea = chartPanel.ContentBounds;
@@ -174,16 +176,16 @@ public class LayoutManager
         finally { PaintPool.Instance.Return(wsBgPaint); }
 
         // CAPA 0.5: Panel backgrounds + chrome
-        _panelSystemRenderer.Render(canvas, _panelSystem);
+        _dockingRenderer.Render(canvas, _dockingManager);
 
         // CAPA 0.75: Secondary toolbar (context-sensitive action bar)
-        var activeCenterForToolbar = _panelSystem.GetActiveCenterTabId();
+        var activeCenterForToolbar = _dockingManager.GetActiveCenterTabId();
         _secondaryToolbar.Render(canvas, screenWidth, activeCenterForToolbar, chartType, interval,
             symbol, _assetPrice, _assetChange);
 
         // CAPA 1: Center content (Chart or other active center panel)
-        var activeCenterId = _panelSystem.GetActiveCenterTabId();
-        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        var activeCenterId = _dockingManager.GetActiveCenterTabId();
+        var chartPanel = _dockingManager.GetPanel(PanelDefinitions.CHART);
         bool chartIsActiveCenter = activeCenterId == PanelDefinitions.CHART
             && chartPanel != null && !chartPanel.IsClosed;
 
@@ -247,7 +249,7 @@ public class LayoutManager
         _panelContent.RenderPanelContent(canvas, orderBook, trades, buffer);
 
         // CAPA 3: Dock zone preview + dragging panel
-        _panelSystemRenderer.RenderOverlay(canvas, _panelSystem, _panelContent.RenderDraggingPanelContent);
+        _dockingRenderer.RenderOverlay(canvas, _dockingManager, _panelContent.RenderDraggingPanelContent);
 
         // CAPA 4: Status bar
         _statusBar.Render(canvas, screenWidth, screenHeight);
@@ -276,7 +278,7 @@ public class LayoutManager
 
     public void UpdateChartTitle(string symbol, string interval, float price)
     {
-        _panelSystem.UpdateChartTitle(symbol, interval, price);
+        _dockingManager.UpdateChartTitle(symbol, interval, price);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -445,7 +447,7 @@ public class LayoutManager
 
     public bool IsMouseOverPanel(float x, float y)
     {
-        return _panelSystem.IsMouseOverPanel(x, y);
+        return _dockingManager.IsMouseOverPanel(x, y);
     }
 
     /// <summary>
@@ -453,22 +455,22 @@ public class LayoutManager
     /// </summary>
     public SKRect GetPriceAxisRect()
     {
-        var chartPanel = _panelSystem.GetPanel(PanelDefinitions.CHART);
+        var chartPanel = _dockingManager.GetPanel(PanelDefinitions.CHART);
         if (chartPanel == null || chartPanel.IsClosed) return SKRect.Empty;
         var c = chartPanel.ContentBounds;
         return new SKRect(c.Right - 60, c.Top, c.Right, c.Bottom);
     }
 
-    public bool IsDraggingPanel => _panelSystem.IsDraggingPanel;
-    public bool HasPotentialDrag => _panelSystem.HasPendingDrag;
-    public bool IsResizingPanel => _panelSystem.IsResizing;
+    public bool IsDraggingPanel => _dockingManager.IsDragging;
+    public bool HasPotentialDrag => _dockingManager.HasPendingDrag;
+    public bool IsResizingPanel => _dockingManager.IsResizing;
 
     public bool IsScriptEditorFocused { get => _panelContent.IsEditorFocused; set => _panelContent.IsEditorFocused = value; }
     public int ScriptEditorActiveScript { get => _panelContent.EditorActiveScript; set => _panelContent.EditorActiveScript = value; }
 
     // Layout persistence
-    public List<PanelState> ExportLayout() => _panelSystem.ExportLayout();
-    public void ImportLayout(List<PanelState> states) => _panelSystem.ImportLayout(states);
-    public void ImportActiveTabs(string bottom, string left, string right, string center = "") => _panelSystem.ImportActiveTabs(bottom, left, right, center);
-    public (string bottom, string left, string right, string center) ExportActiveTabs() => _panelSystem.ExportActiveTabs();
+    public List<PanelState> ExportLayout() => _dockingManager.ExportLayout();
+    public void ImportLayout(List<PanelState> states) => _dockingManager.ImportLayout(states);
+    public void ImportActiveTabs(string bottom, string left, string right, string center = "") => _dockingManager.ImportActiveTabs(bottom, left, right, center);
+    public (string bottom, string left, string right, string center) ExportActiveTabs() => _dockingManager.ExportActiveTabs();
 }

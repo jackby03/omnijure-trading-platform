@@ -6,12 +6,12 @@ namespace Omnijure.Visual.Shared.UI.Input;
 
 public class PanelInputHandler
 {
-    private readonly PanelSystem _panelSystem;
+    private readonly IDockingManager _dockingManager;
     private readonly PanelContentRenderer _renderer;
 
-    public PanelInputHandler(PanelSystem panelSystem, PanelContentRenderer renderer)
+    public PanelInputHandler(IDockingManager dockingManager, PanelContentRenderer renderer)
     {
-        _panelSystem = panelSystem;
+        _dockingManager = dockingManager;
         _renderer = renderer;
     }
 
