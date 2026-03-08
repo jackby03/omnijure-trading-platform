@@ -135,27 +135,28 @@ public static partial class Program
         
         
         
-        _renderer = new ChartRenderer();
-        _toolbar = new ToolbarRenderer();
+        var serviceProvider = Omnijure.Visual.App.ApplicationBootstrapper.ConfigureServices();
+
+        _renderer              = serviceProvider.GetRequiredService<ChartRenderer>();
+        _toolbar               = serviceProvider.GetRequiredService<ToolbarRenderer>();
+        _searchModalRenderer   = serviceProvider.GetRequiredService<SearchModalRenderer>();
+        _settingsModalRenderer = serviceProvider.GetRequiredService<SettingsModalRenderer>();
+        _settingsModal         = serviceProvider.GetRequiredService<UiSettingsModal>();
+        _layout                = serviceProvider.GetRequiredService<LayoutManager>();
+        _settings              = serviceProvider.GetRequiredService<ISettingsProvider>();
+        _eventBus              = serviceProvider.GetRequiredService<IEventBus>();
+        _chartTabs             = Omnijure.Visual.App.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
+
         _toolbar.SetWindowActions(
             onClose: () => _window.Close(),
             onMinimize: () => _window.WindowState = WindowState.Minimized,
-            onMaximize: () => _window.WindowState = _window.WindowState == WindowState.Maximized 
+            onMaximize: () => _window.WindowState = _window.WindowState == WindowState.Maximized
                 ? WindowState.Normal : WindowState.Maximized,
             onWindowMove: (x, y) => _window.Position = new Vector2D<int>(x, y),
             windowHandle: _window.Native!.Win32!.Value.Hwnd
         );
-        _searchModalRenderer = new SearchModalRenderer();
-        _settingsModalRenderer = new SettingsModalRenderer();
-        _settingsModal = new UiSettingsModal();
 
-        var serviceProvider = Omnijure.Visual.App.ApplicationBootstrapper.ConfigureServices();
-        _layout = serviceProvider.GetRequiredService<LayoutManager>();
-        _settings = serviceProvider.GetRequiredService<ISettingsProvider>();
-        _eventBus = serviceProvider.GetRequiredService<Omnijure.Core.Shared.Infrastructure.EventBus.IEventBus>();
-        _chartTabs = Omnijure.Visual.App.ApplicationBootstrapper.InitializeState(serviceProvider, _layout);
-
-        _eventBus.Subscribe<Omnijure.Core.Shared.Infrastructure.EventBus.TabSwitchedEvent>(_ => SyncUiWithActiveTab());
+        _eventBus.Subscribe<TabSwitchedEvent>(_ => SyncUiWithActiveTab());
 
         // Wire up View menu panel toggles
         _toolbar.SetPanelCallbacks(

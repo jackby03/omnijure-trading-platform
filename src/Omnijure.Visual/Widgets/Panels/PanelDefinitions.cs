@@ -101,31 +101,3 @@ public class PanelConfig
     public bool StartClosed { get; set; }
 }
 
-/// <summary>
-/// Posiciones posibles de los paneles
-/// </summary>
-public enum PanelPosition
-{
-    Left,
-    Right,
-    Bottom,
-    Top,
-    Center,
-    Floating
-}
-
-/// <summary>
-/// Zonas de docking avanzadas (VS Code style)
-/// </summary>
-public enum DockRegion
-{
-    Left,
-    Right,
-    Top,
-    Bottom,
-    Center,
-    SplitLeft,      // Dividir actual panel a la izquierda
-    SplitRight,     // Dividir actual panel a la derecha
-    SplitTop,       // Dividir actual panel arriba
-    SplitBottom     // Dividir actual panel abajo
-}

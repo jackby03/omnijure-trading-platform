@@ -10,7 +10,7 @@ namespace Omnijure.Visual.Rendering;
 /// </summary>
 public class PanelContentRenderer
 {
-    private readonly PanelSystem _panelSystem;
+    private readonly IDockingManager _dockingManager;
     private readonly SidebarRenderer _sidebar;
     private readonly Dictionary<string, Omnijure.Visual.Widgets.Panels.IPanelRenderer> _renderers;
 
@@ -47,9 +47,9 @@ public class PanelContentRenderer
     private const int ConsoleLineCount = 20;
     private const float ConsoleLineH = 15;
 
-    public PanelContentRenderer(PanelSystem panelSystem, SidebarRenderer sidebar, IEnumerable<Omnijure.Visual.Widgets.Panels.IPanelRenderer> renderers)
+    public PanelContentRenderer(IDockingManager dockingManager, SidebarRenderer sidebar, IEnumerable<Omnijure.Visual.Widgets.Panels.IPanelRenderer> renderers)
     {
-        _panelSystem = panelSystem;
+        _dockingManager = dockingManager;
         _sidebar = sidebar;
         _renderers = new Dictionary<string, Omnijure.Visual.Widgets.Panels.IPanelRenderer>();
         foreach (var r in renderers) {
@@ -62,12 +62,12 @@ public class PanelContentRenderer
         _lastOrderBook = orderBook;
         _lastTrades = trades;
 
-        foreach (var panel in _panelSystem.Panels)
+        foreach (var panel in _dockingManager.Panels)
         {
             if (panel.IsClosed || panel.IsCollapsed) continue;
             if (panel.Config.Id == PanelDefinitions.CHART) continue;
-            if (_panelSystem.IsPanelBeingDragged(panel)) continue;
-            if (!_panelSystem.IsBottomTabActive(panel)) continue;
+            if (_dockingManager.DraggingPanel == panel) continue;
+            if (!_dockingManager.IsBottomTabActive(panel)) continue;
 
             RenderSinglePanelContent(canvas, panel);
         }
@@ -1590,11 +1590,11 @@ public class PanelContentRenderer
     /// </summary>
     public bool HandlePanelScroll(float x, float y, float deltaY)
     {
-        foreach (var panel in _panelSystem.Panels)
+        foreach (var panel in _dockingManager.Panels)
         {
             if (panel.IsClosed || panel.IsCollapsed) continue;
             if (panel.Config.Id == PanelDefinitions.CHART) continue;
-            if (!_panelSystem.IsBottomTabActive(panel)) continue;
+            if (!_dockingManager.IsBottomTabActive(panel)) continue;
             if (!panel.ContentBounds.Contains(x, y)) continue;
 
             float contentHeight = GetPanelContentHeight(panel);
@@ -1707,7 +1707,7 @@ public class PanelContentRenderer
     {
         if (_activeScriptManager == null) return false;
 
-        var panel = _panelSystem.GetPanel(PanelDefinitions.SCRIPT_EDITOR);
+        var panel = _dockingManager.GetPanel(PanelDefinitions.SCRIPT_EDITOR);
         if (panel == null || panel.IsClosed) return false;
         if (!panel.ContentBounds.Contains(screenX, screenY)) return false;
 
