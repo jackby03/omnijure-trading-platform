@@ -12,8 +12,16 @@
   <img src="https://img.shields.io/badge/.NET_9-C%23_13-512BD4?style=for-the-badge&logo=dotnet" alt=".NET 9" />
   <img src="https://img.shields.io/badge/GPU-OpenGL_SkiaSharp-orange?style=for-the-badge" alt="GPU Accelerated" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT" />
-  <img src="https://img.shields.io/badge/Status-Active_Development-blue?style=for-the-badge" alt="Active" />
+  <img src="https://img.shields.io/badge/Status-Archived-red?style=for-the-badge" alt="Archived" />
 </p>
+
+> [!WARNING]
+> **ARCHIVED PROJECT / PROYECTO ARCHIVADO**
+>
+> **English**: This project is no longer maintained. Due to a strategic decision, Omnijure TDS has been archived. All active development has shifted to the new successor project: **omnitrade**.
+>
+> **Español**: Este proyecto ya no recibirá mantenimiento. Por una decisión estratégica, Omnijure TDS ha sido archivado. Todo el desarrollo activo se ha trasladado al nuevo proyecto sucesor: **omnitrade**.
+
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
